@@ -2,6 +2,7 @@
   "name": "logi-auto-actions",
   "version": "0.1.0",
   "private": true,
+  "license": "UNLICENSED",
   "description": "Node.js web app for generating Logitech Actions SDK plugin assets.",
   "main": "electron/main.js",
   "scripts": {
