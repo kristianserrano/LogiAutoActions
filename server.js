@@ -44,6 +44,7 @@ function checkTool(binary, args = ['--version']) {
 function getSystemDiagnostics() {
   const dotnet = checkTool('dotnet', ['--version']);
   const logiPluginTool = checkTool('LogiPluginTool', ['--help']);
+  const forceNoVerifier = process.env.LOGI_FORCE_NO_VERIFIER === '1';
 
   const pluginApiCandidates = [
     '/Applications/Utilities/LogiPluginService.app/Contents/MonoBundle/PluginApi.dll',
@@ -55,9 +56,9 @@ function getSystemDiagnostics() {
   return {
     dotnet,
     logiPluginTool: {
-      available: logiPluginTool.available,
-      version: logiPluginTool.available ? 'available' : null,
-      output: logiPluginTool.output
+      available: forceNoVerifier ? false : logiPluginTool.available,
+      version: forceNoVerifier ? null : (logiPluginTool.available ? 'available' : null),
+      output: forceNoVerifier ? 'Verifier disabled by LOGI_FORCE_NO_VERIFIER=1' : logiPluginTool.output
     },
     pluginApi: {
       available: Boolean(existingPluginApi),
