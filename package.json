@@ -1,0 +1,49 @@
+{
+  "name": "logi-auto-actions",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Node.js web app for generating Logitech Actions SDK plugin assets.",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "start:web": "node server.js",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:dir": "electron-builder --dir"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "ajv": "^8.18.0",
+    "ajv-formats": "^3.0.1",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.logiautoactions.builder",
+    "productName": "LogiAutoActions",
+    "files": [
+      "electron/**/*",
+      "public/**/*",
+      "src/**/*",
+      "assets/**/*",
+      "config/**/*",
+      "docs/**/*",
+      "server.js",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+iconFile: DefaultEventSource.svg
+
+events:
+    - name: periodic60
+      displayName: Every one minute
+      description: This event is sent every 60 seconds
+    - name: LightroomFocus
+      displayName: Lightroom application activated
+      description: This event is sent when Adobe Lightroom CC application gets focus
+    - name: PhotoshopFocus
+      displayName: Photoshop application activated
+      description: This event is sent when Adobe Photoshop application gets focus

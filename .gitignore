@@ -1,0 +1,36 @@
+# Node dependencies
+node_modules/
+
+# Build and packaging outputs
+artifacts/
+dist/
+out/
+release/
+bin/
+obj/
+
+# Runtime files
+*.log
+logs/
+.pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Environment and local config
+.env
+.env.*
+!.env.example
+*.user
+*.suo
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Coverage and caches
+coverage/
+.nyc_output/
+.cache/

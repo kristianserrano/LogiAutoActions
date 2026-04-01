@@ -1,0 +1,10 @@
+type: IconLibrary
+name: FontAwesomeFreeSolidIcons
+displayName: Font Awesome Free - Solid
+description: Solid icons from the Font Awesome Free icon pack. Font Awesome is the internet's icon library and toolkit used by millions of designers, developers, and content creators.
+version: 7.0.1
+author: Kristian Serrano
+copyright: Copyright © 2025 Fonticons, Inc.
+license: Creative Commons Attribution 4.0 International (CC BY 4.0) for SVG icons. SVG files were modified with SVG properties to facilitate compatibility and presentation. Some icons were renamed to improve searchability.
+licenseUrl: https://fontawesome.com/license/free
+homePageUrl: https://fontawesome.com

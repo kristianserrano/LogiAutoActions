@@ -1,0 +1,30 @@
+{
+  "backgroundColor": 16777215,
+  "items": [
+    {
+      "$type": "Loupedeck.Service.ActionIconImageItem, LoupedeckShared",
+      "image": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4NCjxzdmcgaWQ9ImdyYXBoaWNzIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MDAgNTAwIj4NCiAgPGRlZnM+DQogICAgPHN0eWxlPg0KICAgICAgLmNscy0xIHsNCiAgICAgICAgZmlsbDogI2ZmZjsNCiAgICAgICAgZmlsbC1ydWxlOiBldmVub2RkOw0KICAgICAgICBpc29sYXRpb246IGlzb2xhdGU7DQogICAgICAgIG9wYWNpdHk6IC42NTsNCiAgICAgIH0NCiAgICA8L3N0eWxlPg0KICA8L2RlZnM+DQogIDxwYXRoIGNsYXNzPSJjbHMtMSIgZD0ibTE1Mi44OSwzNjUuMDF2LTEzNS45NGMwLTUuMjcsNC4yNy05LjUzLDkuNTMtOS41M2gyMC42OXYtMzYuNjNoLjA4Yy42OC0xNi44OSw3LjY1LTMxLjQsMjAuMTgtNDIuMDEsMTIuMDktMTAuMjUsMjguNi0xNS44OSw0Ni40Ny0xNS44OXMzNC4zNyw1LjY0LDQ2LjQ3LDE1Ljg5YzEyLjUzLDEwLjYxLDE5LjUsMjUuMTMsMjAuMTgsNDIuMDFoLjAzbC4wNS43NHYzNS44OGgyMi44NGM0LjI1LDAsNy43LDMuNDUsNy43LDcuN3YxMzYuMjRjMCw2LjM3LTUuMTYsMTEuNTMtMTEuNTMsMTEuNTNoLTE3Mi43Yy01LjUyLDAtOS45OS00LjQ3LTkuOTktOS45OVptMTc5LjMzLTQuOXYtMTI1LjY5aC0xNjQuNDR2MTI1LjY5aDE2NC40NFptLTMwLjU1LTE0MC41OHYtMzMuOTFjMC0yNi45Mi0yMS4zMS00NS43Mi01MS44My00NS43MnMtNTEuODMsMTguOC01MS44Myw0NS43MnYzMy45MWgxMDMuNjdaIi8+DQo8L3N2Zz4=",
+      "imageFileName": "Lock.svg",
+      "imageColor": 4278255360,
+      "imageRotation": "None",
+      "area": {
+        "x": 15,
+        "y": 0,
+        "width": 70,
+        "height": 70
+      }
+    },
+    {
+      "$type": "Loupedeck.Service.ActionIconTextItem, LoupedeckShared",
+      "text": "Lock Desktop",
+      "textColor": 4294901760,
+      "fontSize": 5,
+      "area": {
+        "x": 0,
+        "y": 60,
+        "width": 100,
+        "height": 40
+      }
+    }
+  ]
+}

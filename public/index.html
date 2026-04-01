@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Logi Plugin Builder</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="card">
+        <p class="eyebrow">LogiAutoActions</p>
+        <h1>Action Builder</h1>
+        <p class="intro">
+          Paste a shortcuts page URL or upload a file, then review suggested icons before the app
+          generates your plugin files.
+        </p>
+        <div class="status" id="status">Checking API health...</div>
+
+        <div class="grid">
+          <section class="panel">
+            <h2>Step 1: Describe the Action</h2>
+            <label>
+              Action Name
+              <input id="actionName" type="text" placeholder="Toggle Mute" />
+            </label>
+            <label>
+              What this action should do
+              <textarea
+                id="actionDescription"
+                rows="3"
+                placeholder="Switch audio between muted and unmuted states"
+              ></textarea>
+            </label>
+            <label>
+              Action mode
+              <select id="actionType">
+                <option value="single">Single</option>
+                <option value="toggle" selected>Toggle</option>
+                <option value="multistate">Multistate</option>
+              </select>
+            </label>
+            <label>
+              State names (comma separated)
+              <input id="actionStates" type="text" value="Muted, Unmuted" />
+            </label>
+          </section>
+
+          <section class="panel">
+            <h2>Step 2: Add Keyboard Shortcuts</h2>
+            <label>
+              Shortcuts page URL
+              <input id="shortcutUrl" type="url" placeholder="https://example.com/shortcuts" />
+            </label>
+            <button id="extractFromUrl" class="button button-secondary" type="button">
+              Import from URL
+            </button>
+
+            <label>
+              Upload shortcuts file (.txt, .md, .csv)
+              <input id="shortcutFile" type="file" accept=".txt,.md,.csv,text/plain,text/markdown" />
+            </label>
+
+            <label>
+              Or paste shortcuts text
+              <textarea
+                id="shortcutText"
+                rows="6"
+                placeholder="Play/Pause - Ctrl+Shift+P"
+              ></textarea>
+            </label>
+            <button id="extractFromText" class="button" type="button">Import from Text</button>
+          </section>
+        </div>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Step 3: Review Suggestions</h2>
+            <div class="actions-row">
+              <button id="runDiagnostics" class="button button-secondary" type="button">Check Local Tools</button>
+              <button id="checkReadiness" class="button button-secondary" type="button">Check Readiness</button>
+              <button id="rankIcons" class="button" type="button">Suggest Best Icon</button>
+              <button id="runMockBuild" class="button" type="button">Run Chrome Test Build</button>
+            </div>
+          </div>
+          <p class="subtle">Local toolchain diagnostics:</p>
+          <div id="diagnosticsResult" class="readiness">Click "Check Local Tools" to test dotnet and LogiPluginTool.</div>
+
+          <p class="subtle">Imported shortcuts:</p>
+          <pre id="shortcutResults" class="output">No shortcuts extracted yet.</pre>
+
+          <p class="subtle">Generation readiness:</p>
+          <div id="readinessResult" class="readiness">Complete steps above, then click "Check Readiness".</div>
+
+          <p class="subtle">Suggested icons:</p>
+          <div id="iconResults" class="results">Click "Suggest Best Icon" to see recommendations.</div>
+
+          <p class="subtle">Mock build status:</p>
+          <div id="buildResult" class="readiness">Run "Chrome Test Build" to simulate generation and packaging.</div>
+        </section>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>

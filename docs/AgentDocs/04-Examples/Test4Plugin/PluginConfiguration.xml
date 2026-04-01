@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+    <plugin displayName="Test4" homepage="https://loupedeck.com" />
+    <aliases>
+        <alias name="AllButtons" controls="Crop" />
+        <alias name="AllEncoders" controls="Crop" />
+    </aliases>
+    <modes>
+        <mode name="Main" />
+    </modes>
+    <actions>
+		<group displayName="">
+			<command name="InRootFolder" />
+		</group>
+        <group displayName="Test">
+            <command name="ResetWithoutAdjustmentXmlCommand" displayName="Reset without adjustment (XML)" />
+        </group>
+        <group displayName="Group Level 1###Group Level 2">
+			<command name="XmlTest" displayName="XML Test" />
+		</group>
+	</actions>
+    <layouts>
+        <layout name="Main">
+			<command name="InRootFolder" otherControls="AllButtons" />
+            <command name="XmlTest" otherControls="AllButtons" />
+            <command name="ResetWithoutAdjustmentXmlCommand" otherControls="AllButtons" />
+        </layout>
+    </layouts>
+</configuration>

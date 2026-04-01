@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<xliff version="1.2">
+  <file original="$DefaultWin" source-language="en" target-language="" datatype="csharp">
+    <body>
+      <group id="@width90">
+        <trans-unit id="Loupedeck.Test4Plugin.SetLanguageDynamicCommand___xx-XX" translate="yes">
+          <source>Unknown</source>
+          <target>Unknown fr-FR</target>
+        </trans-unit>
+      </group>
+    </body>
+  </file>
+</xliff>

@@ -1,0 +1,111 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<configuration pluginName="Test4">
+    <plugin_info name="Test4" displayName="Test4" author="LoupeDeck Ltd." copyright="Copyright © 2020 LoupeDeck Oy. All rights reserved." version="3.0.7375.25991" homepage="https://loupedeck.com" isUserPlugin="False" nativePluginName="Test4" />
+    <options />
+    <round_page name="">
+        <commands>
+            <action actionName="" />
+            <action actionName="" />
+            <action actionName="" />
+            <action actionName="" />
+            <action actionName="" />
+            <action actionName="" />
+            <action actionName="" />
+            <action actionName="" />
+        </commands>
+        <commands_fn>
+            <action actionName="" />
+            <action actionName="" />
+            <action actionName="" />
+            <action actionName="" />
+            <action actionName="" />
+            <action actionName="" />
+            <action actionName="" />
+            <action actionName="" />
+        </commands_fn>
+    </round_page>
+    <square_page name="">
+        <commands>
+            <action actionName="" />
+            <action actionName="@KeyboardShortcut" actionParameter="Control+KeyZ" />
+            <action actionName="" />
+            <action actionName="" />
+            <action actionName="" />
+            <action actionName="" />
+            <action actionName="@KeyboardShortcut" actionParameter="ArrowUp" />
+            <action actionName="@KeyboardShortcut" actionParameter="ArrowLeft" />
+            <action actionName="" />
+            <action actionName="@KeyboardShortcut" actionParameter="ArrowDown" />
+            <action actionName="@KeyboardShortcut" actionParameter="ArrowRight" />
+            <action actionName="WindowsActions" />
+        </commands>
+        <commands_fn>
+            <action actionName="" />
+            <action actionName="@KeyboardShortcut" actionParameter="Control+KeyY" />
+            <action actionName="" />
+            <action actionName="" />
+            <action actionName="" />
+            <action actionName="" />
+            <action actionName="@KeyboardShortcut" actionParameter="PageUp" />
+            <action actionName="@KeyboardShortcut" actionParameter="Home" />
+            <action actionName="" />
+            <action actionName="@KeyboardShortcut" actionParameter="PageDown" />
+            <action actionName="@KeyboardShortcut" actionParameter="End" />
+            <action actionName="WindowsSettings" />
+        </commands_fn>
+    </square_page>
+    <modes>
+        <mode name="Main">
+            <touch_pages>
+                <touch_page name="TouchPage1" displayName="Main">
+                    <commands>
+                        <action actionName="" />
+                        <action actionName="" />
+                        <action actionName="" />
+                        <action actionName="" />
+                        <action actionName="" />
+                        <action actionName="" />
+                        <action actionName="" />
+                        <action actionName="" />
+                        <action actionName="" />
+                        <action actionName="" />
+                        <action actionName="" />
+                        <action actionName="" />
+                    </commands>
+                </touch_page>
+            </touch_pages>
+            <encoder_pages>
+                <encoder_page name="EncoderPage1" displayName="Main">
+                    <commands>
+                        <action actionName="" />
+                        <action actionName="" />
+                        <action actionName="" />
+                        <action actionName="" />
+                        <action actionName="" />
+                        <action actionName="" />
+                    </commands>
+                    <adjustments>
+                        <action actionName="" />
+                        <action actionName="" />
+                        <action actionName="" />
+                        <action actionName="" />
+                        <action actionName="" />
+                        <action actionName="" />
+                    </adjustments>
+                </encoder_page>
+            </encoder_pages>
+            <wheel_pages>
+                <wheel_page name="AnalogClock" displayName="Analog Clock" template="WheelToolAnalogClock" />
+            </wheel_pages>
+            <workspaces>
+                <workspace name="Main" displayName="Main" touchPages="TouchPage1" encoderPages="EncoderPage1" wheelPages="AnalogClock" />
+            </workspaces>
+        </mode>
+    </modes>
+    <images>
+    </images>
+    <strings>
+    </strings>
+    <macros />
+    <links />
+</configuration>

@@ -1,0 +1,70 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Loupedeck.Test4Plugin</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup>
+      <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+      <OutputPath>$(OutputPath)$(MSBuildProjectName)</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="ActionEditor\ActionEditorCommandBlue.png" />
+    <None Remove="ActionEditor\ActionEditorCommandFalse.png" />
+    <None Remove="ActionEditor\ActionEditorCommandGreen.png" />
+    <None Remove="ActionEditor\ActionEditorCommandRed.png" />
+    <None Remove="ActionEditor\ActionEditorCommandTrue.png" />
+    <None Remove="Localization\Test4Plugin.xliff" />
+    <None Remove="Localization\Test4Plugin_de-DE.xliff" />
+    <None Remove="Localization\Test4Plugin_fr-FR.xliff" />
+    <None Remove="PluginConfiguration.xml" />
+    <None Remove="PluginConfiguration2.xml" />
+    <None Remove="PluginDynamicCommands\AnimatedImageDynamicCommand.gif" />
+    <None Remove="PluginDynamicCommands\SvgImageDynamicCommand.svg" />
+    <None Remove="Resources\Icon256x256.png" />
+    <None Remove="Resources\PluginIcon48x48.png" />
+    <None Remove="ToggleSwitchButton\ToggleSwitchButton0.png" />
+    <None Remove="ToggleSwitchButton\ToggleSwitchButton1.png" />
+    <None Remove="TwoStateDynamicCommands\Toggle1.png" />
+    <None Remove="TwoStateDynamicCommands\Toggle2.png" />
+    <None Remove="TwoStateDynamicCommands\TurnOff.png" />
+    <None Remove="TwoStateDynamicCommands\TurnOn.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="ActionEditor\ActionEditorCommandBlue.png" />
+    <EmbeddedResource Include="ActionEditor\ActionEditorCommandFalse.png" />
+    <EmbeddedResource Include="ActionEditor\ActionEditorCommandGreen.png" />
+    <EmbeddedResource Include="ActionEditor\ActionEditorCommandRed.png" />
+    <EmbeddedResource Include="ActionEditor\ActionEditorCommandTrue.png" />
+    <EmbeddedResource Include="Localization\Test4Plugin.xliff" />
+    <EmbeddedResource Include="Localization\Test4Plugin_de-DE.xliff" />
+    <EmbeddedResource Include="Localization\Test4Plugin_fr-FR.xliff" />
+    <EmbeddedResource Include="PluginConfiguration.xml" />
+    <EmbeddedResource Include="PluginConfiguration2.xml" />
+    <EmbeddedResource Include="PluginDynamicCommands\AnimatedImageDynamicCommand.gif" />
+    <EmbeddedResource Include="PluginDynamicCommands\SvgImageDynamicCommand.svg" />
+    <EmbeddedResource Include="Resources\Icon256x256.png" />
+    <EmbeddedResource Include="Resources\PluginIcon48x48.png" />
+    <EmbeddedResource Include="ToggleSwitchButton\ToggleSwitchButton0.png" />
+    <EmbeddedResource Include="ToggleSwitchButton\ToggleSwitchButton1.png" />
+    <EmbeddedResource Include="TwoStateDynamicCommands\Toggle1.png" />
+    <EmbeddedResource Include="TwoStateDynamicCommands\Toggle2.png" />
+    <EmbeddedResource Include="TwoStateDynamicCommands\TurnOff.png" />
+    <EmbeddedResource Include="TwoStateDynamicCommands\TurnOn.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\LoupedeckService\LoupedeckService.csproj" />
+    <ProjectReference Include="..\..\Core\LoupedeckShared\LoupedeckShared.csproj" />
+    <ProjectReference Include="..\..\Core\PluginApi\PluginApi.csproj" />
+  </ItemGroup>
+
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Command="$(ProjectDir)BuildEvents/postbuild $(ProjectDir) $(OutputPath) $(Configuration) $(ProjectName)" />
+  </Target>
+
+</Project>

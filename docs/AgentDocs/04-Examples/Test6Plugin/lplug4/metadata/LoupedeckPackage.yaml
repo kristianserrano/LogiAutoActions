@@ -1,0 +1,29 @@
+type: plugin4
+name: Test6
+displayName: Test6 internal test plugin
+description: Plugin used for internal testing of Loupedeck features
+version: 6.0
+
+author: Loupedeck
+copyright: Copyright © 2024 Loupedeck. All rights reserved.
+license: Confidential
+
+homePageUrl: https://loupedeck.com
+supportPageUrl: https://loupedeck.com
+
+pluginFileName: Test6Plugin.dll
+pluginFolderWin: .
+
+supportedDevices:
+    - LoupedeckCtFamily
+    - LoupedeckPlusFamily
+
+pluginCapabilities:
+    #- HasApplication
+    #- ActivatesApplication
+
+minimumLoupedeckVersion: 6.0
+
+backgroundColor: 4278190335
+foregroundColor: 4294901760
+textColor: 4278222848

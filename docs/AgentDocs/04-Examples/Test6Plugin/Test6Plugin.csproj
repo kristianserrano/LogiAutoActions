@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Loupedeck.Test6Plugin</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup>
+      <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+      <OutputPath>$(OutputPath)$(MSBuildProjectName)</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="ActionIcon\ActionIconDynamicCommand1.svg" />
+    <None Remove="ActionIcon\ActionIconDynamicCommand6.svg" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="ActionIcon\ActionIconDynamicCommand1.svg" />
+    <EmbeddedResource Include="ActionIcon\ActionIconDynamicCommand6.svg" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\PluginApi\PluginApi.csproj" />
+  </ItemGroup>
+
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Command="$(ProjectDir)BuildEvents/postbuild $(ProjectDir) $(OutputPath) $(Configuration) $(ProjectName)" />
+  </Target>
+
+</Project>
