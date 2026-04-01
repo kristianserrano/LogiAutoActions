@@ -345,6 +345,15 @@ runMockBuildBtn.addEventListener('click', async () => {
           return;
         }
 
+        if (statusData.status === 'failed') {
+          clearInterval(timer);
+          const result = statusData.result || {};
+          const error = result.error || {};
+          const message = error.message || result.message || 'Build failed during verification.';
+          setBuildStatus('warn', `Build failed: ${message}`);
+          return;
+        }
+
         if (attempts >= maxAttempts) {
           clearInterval(timer);
           setBuildStatus('warn', 'Build check timed out. Try again.');

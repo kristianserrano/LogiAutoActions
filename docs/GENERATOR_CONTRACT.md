@@ -291,8 +291,12 @@ The Node.js app exposes a mock build pipeline for UI integration and flow testin
   - Validates input payload and starts an asynchronous mock job.
   - Success response: { ok: true, jobId: "...", status: "queued" }
 - GET /api/generator/mock-build/:jobId
-  - Returns job status progression: queued, building, packaging, completed.
+  - Returns job status progression: queued, building, packaging, completed, failed.
   - Includes mock result payload when completed.
+  - Verification gate behavior:
+    - Job ends in failed if package verification fails or verifier tool is unavailable.
+    - In failed state, result.error includes code VERIFY_FAILED and stage packaging.
+    - package.filePath is null unless verifyPassed is true.
 
 ## Acceptance Criteria
 

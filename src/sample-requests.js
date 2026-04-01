@@ -1,0 +1,72 @@
+function createChromeShortcutsTestRequest() {
+  return {
+    projectName: 'ChromeEditingTestPlugin',
+    displayName: 'Chrome Editing Test Plugin',
+    author: 'LogiAutoActions User',
+    version: '1.0.0',
+    description: 'Test plugin for Chrome keyboard shortcut actions and zoom adjustment.',
+    category: 'Productivity',
+    supportedDevices: ['LoupedeckCtFamily'],
+    minimumLoupedeckVersion: '6.0',
+    actions: [
+      {
+        id: 'cut_text',
+        name: 'Cut',
+        description: 'Cuts selected text in Chrome.',
+        groupPath: 'Browser###Editing',
+        actionKind: 'command',
+        intent: {
+          sourceShortcuts: ['Ctrl+X', 'Cmd+X']
+        },
+        behavior: {
+          keyboardShortcuts: ['Ctrl+X', 'Cmd+X']
+        }
+      },
+      {
+        id: 'copy_text',
+        name: 'Copy',
+        description: 'Copies selected text in Chrome.',
+        groupPath: 'Browser###Editing',
+        actionKind: 'command',
+        intent: {
+          sourceShortcuts: ['Ctrl+C', 'Cmd+C']
+        },
+        behavior: {
+          keyboardShortcuts: ['Ctrl+C', 'Cmd+C']
+        }
+      },
+      {
+        id: 'paste_text',
+        name: 'Paste',
+        description: 'Pastes clipboard content in Chrome.',
+        groupPath: 'Browser###Editing',
+        actionKind: 'command',
+        intent: {
+          sourceShortcuts: ['Ctrl+V', 'Cmd+V']
+        },
+        behavior: {
+          keyboardShortcuts: ['Ctrl+V', 'Cmd+V']
+        }
+      },
+      {
+        id: 'browser_zoom',
+        name: 'Browser Zoom',
+        description: 'Rotary zoom in/out using Chrome shortcuts.',
+        groupPath: 'Browser###View',
+        actionKind: 'adjustment',
+        intent: {
+          sourceShortcuts: ['Ctrl+Plus', 'Ctrl+Minus', 'Cmd+Plus', 'Cmd+Minus']
+        },
+        behavior: {
+          keyboardShortcuts: ['Ctrl+Plus', 'Ctrl+Minus', 'Cmd+Plus', 'Cmd+Minus'],
+          resetOnPress: true,
+          defaultValue: '100%'
+        }
+      }
+    ]
+  };
+}
+
+module.exports = {
+  createChromeShortcutsTestRequest
+};

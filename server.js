@@ -6,6 +6,9 @@ const express = require('express');
 const AdmZip = require('adm-zip');
 const { rankIcons, scanIconCandidates } = require('./src/icon-ranking');
 const { validateGeneratorRequest } = require('./src/validate-generator-request');
+const { parseShortcutEntries, stripHtml } = require('./src/shortcut-extraction');
+const { verifyLplug4Package } = require('./src/package-verification');
+const { createChromeShortcutsTestRequest } = require('./src/sample-requests');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -252,93 +255,48 @@ function writePluginArtifacts(payload) {
   };
 }
 
-function createChromeShortcutsTestRequest() {
-  return {
-    projectName: 'ChromeEditingTestPlugin',
-    displayName: 'Chrome Editing Test Plugin',
-    author: 'LogiAutoActions User',
-    version: '1.0.0',
-    description: 'Test plugin for Chrome keyboard shortcut actions and zoom adjustment.',
-    category: 'Productivity',
-    supportedDevices: ['LoupedeckCtFamily'],
-    minimumLoupedeckVersion: '6.0',
-    actions: [
-      {
-        id: 'cut_text',
-        name: 'Cut',
-        description: 'Cuts selected text in Chrome.',
-        groupPath: 'Browser###Editing',
-        actionKind: 'command',
-        intent: {
-          sourceShortcuts: ['Ctrl+X', 'Cmd+X']
-        },
-        behavior: {
-          keyboardShortcuts: ['Ctrl+X', 'Cmd+X']
-        }
-      },
-      {
-        id: 'copy_text',
-        name: 'Copy',
-        description: 'Copies selected text in Chrome.',
-        groupPath: 'Browser###Editing',
-        actionKind: 'command',
-        intent: {
-          sourceShortcuts: ['Ctrl+C', 'Cmd+C']
-        },
-        behavior: {
-          keyboardShortcuts: ['Ctrl+C', 'Cmd+C']
-        }
-      },
-      {
-        id: 'paste_text',
-        name: 'Paste',
-        description: 'Pastes clipboard content in Chrome.',
-        groupPath: 'Browser###Editing',
-        actionKind: 'command',
-        intent: {
-          sourceShortcuts: ['Ctrl+V', 'Cmd+V']
-        },
-        behavior: {
-          keyboardShortcuts: ['Ctrl+V', 'Cmd+V']
-        }
-      },
-      {
-        id: 'browser_zoom',
-        name: 'Browser Zoom',
-        description: 'Rotary zoom in/out using Chrome shortcuts.',
-        groupPath: 'Browser###View',
-        actionKind: 'adjustment',
-        intent: {
-          sourceShortcuts: ['Ctrl+Plus', 'Ctrl+Minus', 'Cmd+Plus', 'Cmd+Minus']
-        },
-        behavior: {
-          keyboardShortcuts: ['Ctrl+Plus', 'Ctrl+Minus', 'Cmd+Plus', 'Cmd+Minus'],
-          resetOnPress: true,
-          defaultValue: '100%'
-        }
-      }
-    ]
-  };
-}
-
 function buildMockBuildResult(payload) {
   const artifacts = writePluginArtifacts(payload);
+  const verification = verifyLplug4Package(artifacts.packagePath, artifacts.diagnostics);
+  const verificationPassed = verification.passed;
+  const verificationError = !verificationPassed
+    ? {
+      code: 'VERIFY_FAILED',
+      stage: 'packaging',
+      message: verification.message,
+      details: verification.output ? [verification.output] : []
+    }
+    : null;
+
+  if (verificationError) {
+    artifacts.warnings.push(verification.message);
+    if (verification.output) {
+      artifacts.warnings.push(verification.output.split('\n').slice(0, 2).join(' | '));
+    }
+  }
+
   return {
-    ok: true,
+    ok: verificationPassed,
     pluginName: artifacts.pluginName,
     outputPath: path.relative(__dirname, artifacts.artifactRoot).split(path.sep).join('/'),
     generatedFiles: artifacts.generatedFiles,
     selectedIcons: [],
     warnings: artifacts.warnings,
+    error: verificationError,
     build: {
       attempted: true,
-      succeeded: true,
+      succeeded: verificationPassed,
       mode: artifacts.realBuildUsed ? 'real' : 'fallback',
       diagnostics: artifacts.diagnostics
     },
     package: {
-      filePath: path.relative(__dirname, artifacts.packagePath).split(path.sep).join('/'),
-      verifyPassed: true
+      filePath: verificationPassed
+        ? path.relative(__dirname, artifacts.packagePath).split(path.sep).join('/')
+        : null,
+      verifyAttempted: verification.attempted,
+      verifyPassed: verificationPassed,
+      verifyMessage: verification.message,
+      verifyOutput: verification.output
     },
     actionSummary: (payload.actions || []).map((action) => ({
       id: action.id,
@@ -385,9 +343,10 @@ function runMockBuildJob(jobId, payload) {
       return;
     }
     try {
-      active.status = 'completed';
+      const result = buildMockBuildResult(payload);
+      active.status = result.ok ? 'completed' : 'failed';
       active.updatedAt = now();
-      active.result = buildMockBuildResult(payload);
+      active.result = result;
     } catch (error) {
       active.status = 'failed';
       active.updatedAt = now();
@@ -398,59 +357,6 @@ function runMockBuildJob(jobId, payload) {
       };
     }
   }, 2000);
-}
-
-function decodeHtml(text) {
-  return text
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&#39;/gi, "'")
-    .replace(/&quot;/gi, '"');
-}
-
-function stripHtml(html) {
-  return decodeHtml(
-    String(html || '')
-      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<[^>]+>/g, ' ')
-  );
-}
-
-function parseShortcutEntries(text) {
-  const source = String(text || '');
-  const lines = source
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-
-  const modifier = '(?:Ctrl|Control|Cmd|Command|Alt|Option|Shift|Fn|Meta|Win|⌘|⌥|⌃|⇧)';
-  const keyPart = '(?:[A-Za-z0-9]{1,12}|F(?:[1-9]|1[0-2])|Esc|Enter|Return|Space|Tab|Backspace|Delete|Home|End|PageUp|PageDown|Up|Down|Left|Right)';
-  const shortcutRegex = new RegExp(`${modifier}(?:\\s*\\+\\s*${keyPart})+`, 'gi');
-
-  const unique = new Map();
-  for (const line of lines) {
-    const matches = line.match(shortcutRegex) || [];
-    for (const match of matches) {
-      const normalized = match
-        .replace(/\s+/g, '')
-        .replace(/control/gi, 'Ctrl')
-        .replace(/command/gi, 'Cmd')
-        .replace(/option/gi, 'Alt')
-        .replace(/meta/gi, 'Cmd');
-
-      if (!unique.has(normalized)) {
-        unique.set(normalized, line);
-      }
-    }
-  }
-
-  return Array.from(unique.entries()).map(([shortcut, context]) => ({
-    shortcut,
-    context
-  }));
 }
 
 let iconCandidates = [];

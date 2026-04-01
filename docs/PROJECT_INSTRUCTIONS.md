@@ -21,3 +21,15 @@ The web app acts as a compiler/generator. It takes user input (URLs/Text), ident
 2. Ensure all C# code is modular and ready to be bundled into a Logi Options+ plugin.
 3. Ensure a DRY approach for code architecture and constant variables.
 4. Provide a verification UI in the web app so the user can review the C# code and icon assignments before saving.
+
+## Hardening Requirements
+
+- Build output must be verifier-gated.
+  - Do not report build success unless `LogiPluginTool verify` passes.
+  - Do not expose downloadable package paths when verification fails.
+- Keep deterministic regression tests for:
+  - Generator contract validation rules
+  - Shortcut extraction and normalization
+  - Icon ranking determinism
+  - Canonical sample request (golden fixture)
+- Run automated tests in CI for push and pull request events.

@@ -8,6 +8,8 @@
     "start": "electron .",
     "dev": "electron .",
     "start:web": "node server.js",
+    "test": "node --test",
+    "test:watch": "node --test --watch",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
     "dist:dir": "electron-builder --dir"
