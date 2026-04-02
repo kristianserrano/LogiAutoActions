@@ -137,6 +137,11 @@ textarea {
   cursor: pointer;
 }
 
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .button-secondary {
   background: linear-gradient(90deg, #475750, #5f7269);
 }
@@ -198,6 +203,46 @@ textarea {
   background: #ffffff;
 }
 
+.approval-summary {
+  border: 1px dashed rgba(20, 34, 31, 0.22);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #f7faf8;
+  font-size: 0.9rem;
+}
+
+.approval-card {
+  border: 1px solid rgba(20, 34, 31, 0.16);
+  border-radius: 12px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.approval-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.approval-input {
+  margin-top: 0;
+}
+
+.chip-approval-ok {
+  border-color: rgba(22, 88, 70, 0.4);
+  background: #eef9f4;
+}
+
+.chip-approval-warn {
+  border-color: rgba(168, 96, 33, 0.35);
+  background: #fff7ee;
+}
+
+.chip-approval-pending {
+  border-color: rgba(30, 84, 120, 0.35);
+  background: #edf6ff;
+}
+
 .result-row {
   display: flex;
   flex-wrap: wrap;
@@ -237,6 +282,10 @@ textarea {
 
 @media (max-width: 900px) {
   .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .approval-grid {
     grid-template-columns: 1fr;
   }
 }
