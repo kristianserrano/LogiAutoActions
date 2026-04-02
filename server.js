@@ -45,6 +45,7 @@ function getSystemDiagnostics() {
   const dotnet = checkTool('dotnet', ['--version']);
   const logiPluginTool = checkTool('LogiPluginTool', ['--help']);
   const forceNoVerifier = process.env.LOGI_FORCE_NO_VERIFIER === '1';
+  const forceNoRealBuild = process.env.LOGI_FORCE_NO_REAL_BUILD === '1';
 
   const pluginApiCandidates = [
     '/Applications/Utilities/LogiPluginService.app/Contents/MonoBundle/PluginApi.dll',
@@ -65,7 +66,7 @@ function getSystemDiagnostics() {
       path: existingPluginApi || null,
       candidates: pluginApiCandidates
     },
-    canAttemptRealBuild: dotnet.available && Boolean(existingPluginApi)
+    canAttemptRealBuild: !forceNoRealBuild && dotnet.available && Boolean(existingPluginApi)
   };
 }
 
@@ -104,12 +105,16 @@ function createActionClass(pluginName, action) {
   const actionName = action.name || action.id;
   const actionDescription = action.description || 'Generated action';
   const actionGroup = action.groupPath || 'Generated';
+  const shortcuts = action.behavior && Array.isArray(action.behavior.keyboardShortcuts)
+    ? action.behavior.keyboardShortcuts
+    : [];
+  const shortcutList = shortcuts.map((item) => `"${item}"`).join(', ');
 
   if (action.actionKind === 'adjustment') {
     return {
       fileName: `${className}Adjustment.cs`,
       className,
-      content: `using System;\n\nnamespace Loupedeck.${pluginName}.Actions;\n\npublic class ${className}Adjustment : PluginDynamicAdjustment\n{\n    private Int32 _value = 100;\n\n    public ${className}Adjustment()\n        : base("${actionName}", "${actionDescription}", "${actionGroup}", hasReset: true)\n    {\n    }\n\n    protected override void ApplyAdjustment(String actionParameter, Int32 diff)\n    {\n        _value += diff;\n        this.AdjustmentValueChanged();\n    }\n\n    protected override void RunCommand(String actionParameter)\n    {\n        _value = 100;\n        this.AdjustmentValueChanged();\n    }\n\n    protected override String GetAdjustmentValue(String actionParameter)\n        => $"{_value}%";\n}\n`
+      content: `using System;\n\nnamespace Loupedeck.${pluginName}.Actions;\n\npublic class ${className}Adjustment : PluginDynamicAdjustment\n{\n    private readonly String[] _shortcuts = new[] { ${shortcutList || '""'} };\n    private Int32 _value = 100;\n\n    public ${className}Adjustment()\n        : base("${actionName}", "${actionDescription}", "${actionGroup}", hasReset: true)\n    {\n    }\n\n    protected override void ApplyAdjustment(String actionParameter, Int32 diff)\n    {\n        _value += diff;\n        this.AdjustmentValueChanged();\n        // TODO: map diff direction to _shortcuts for runtime dispatch.\n    }\n\n    protected override void RunCommand(String actionParameter)\n    {\n        _value = 100;\n        this.AdjustmentValueChanged();\n    }\n\n    protected override String GetAdjustmentValue(String actionParameter)\n        => $"{_value}%";\n}\n`
     };
   }
 
@@ -119,7 +124,7 @@ function createActionClass(pluginName, action) {
     return {
       fileName: `${className}MultistateCommand.cs`,
       className,
-      content: `using System;\n\nnamespace Loupedeck.${pluginName}.Actions;\n\npublic class ${className}MultistateCommand : PluginMultistateDynamicCommand\n{\n    public ${className}MultistateCommand()\n        : base("${actionName}", "${actionDescription}", "${actionGroup}", new[] { ${stateList} })\n    {\n    }\n}\n`
+      content: `using System;\n\nnamespace Loupedeck.${pluginName}.Actions;\n\npublic class ${className}MultistateCommand : PluginMultistateDynamicCommand\n{\n    private readonly String[] _shortcuts = new[] { ${shortcutList || '""'} };\n\n    public ${className}MultistateCommand()\n        : base("${actionName}", "${actionDescription}", "${actionGroup}", new[] { ${stateList} })\n    {\n    }\n}\n`
     };
   }
 
@@ -130,14 +135,14 @@ function createActionClass(pluginName, action) {
     return {
       fileName: `${className}ToggleCommand.cs`,
       className,
-      content: `using System;\n\nnamespace Loupedeck.${pluginName}.Actions;\n\npublic class ${className}ToggleCommand : PluginDynamicCommand\n{\n    private Boolean _isSecondState;\n\n    public ${className}ToggleCommand()\n        : base("${actionName}", "${actionDescription}", "${actionGroup}")\n    {\n    }\n\n    protected override void RunCommand(String actionParameter)\n    {\n        _isSecondState = !_isSecondState;\n        this.ActionImageChanged();\n    }\n\n    protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)\n        => _isSecondState ? "${stateB}" : "${stateA}";\n}\n`
+      content: `using System;\n\nnamespace Loupedeck.${pluginName}.Actions;\n\npublic class ${className}ToggleCommand : PluginDynamicCommand\n{\n    private readonly String[] _shortcuts = new[] { ${shortcutList || '""'} };\n    private Boolean _isSecondState;\n\n    public ${className}ToggleCommand()\n        : base("${actionName}", "${actionDescription}", "${actionGroup}")\n    {\n    }\n\n    protected override void RunCommand(String actionParameter)\n    {\n        _isSecondState = !_isSecondState;\n        // TODO: trigger _shortcuts[_isSecondState ? 1 : 0] through runtime command bridge.\n        this.ActionImageChanged();\n    }\n\n    protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)\n        => _isSecondState ? "${stateB}" : "${stateA}";\n}\n`
     };
   }
 
   return {
     fileName: `${className}Command.cs`,
     className,
-    content: `using System;\n\nnamespace Loupedeck.${pluginName}.Actions;\n\npublic class ${className}Command : PluginDynamicCommand\n{\n    public ${className}Command()\n        : base("${actionName}", "${actionDescription}", "${actionGroup}")\n    {\n    }\n\n    protected override void RunCommand(String actionParameter)\n    {\n        // Shortcut execution mapping to be added by generator runtime.\n    }\n}\n`
+    content: `using System;\n\nnamespace Loupedeck.${pluginName}.Actions;\n\npublic class ${className}Command : PluginDynamicCommand\n{\n    private readonly String[] _shortcuts = new[] { ${shortcutList || '""'} };\n\n    public ${className}Command()\n        : base("${actionName}", "${actionDescription}", "${actionGroup}")\n    {\n    }\n\n    protected override void RunCommand(String actionParameter)\n    {\n        // TODO: trigger _shortcuts[0] through runtime command bridge.\n    }\n}\n`
   };
 }
 
@@ -358,6 +363,157 @@ function buildApprovalPreview(payload) {
   };
 }
 
+function normalizeApprovalStates(states) {
+  return Array.isArray(states)
+    ? states.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+}
+
+function normalizeApprovalShortcuts(shortcuts) {
+  return Array.isArray(shortcuts)
+    ? shortcuts.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+}
+
+function validateApprovalAction(action, index) {
+  const errors = [];
+  const name = String(action.name || '').trim();
+  const actionKind = String(action.actionKind || 'command').trim();
+  const shortcuts = normalizeApprovalShortcuts(action.shortcuts);
+  const states = normalizeApprovalStates(action.states);
+
+  if (!name) {
+    errors.push({ field: 'name', message: 'Action name is required.' });
+  }
+
+  if (actionKind === 'toggle') {
+    if (shortcuts.length !== 2) {
+      errors.push({ field: 'shortcuts', message: 'Toggle actions require exactly 2 shortcuts.' });
+    }
+    if (states.length !== 2) {
+      errors.push({ field: 'states', message: 'Toggle actions require exactly 2 states.' });
+    }
+  }
+
+  if (actionKind === 'multistate') {
+    if (shortcuts.length < 3) {
+      errors.push({ field: 'shortcuts', message: 'Multistate actions require at least 3 shortcuts.' });
+    }
+    if (states.length < 3) {
+      errors.push({ field: 'states', message: 'Multistate actions require at least 3 states.' });
+    }
+  }
+
+  if ((actionKind === 'command' || actionKind === 'adjustment') && shortcuts.length < 1) {
+    errors.push({ field: 'shortcuts', message: 'At least one shortcut is required.' });
+  }
+
+  return {
+    index,
+    id: action.id || `action_${index + 1}`,
+    valid: errors.length === 0,
+    errors,
+    normalized: {
+      id: action.id || `action_${index + 1}`,
+      name,
+      actionKind,
+      shortcuts,
+      states,
+      description: String(action.description || '').trim() || 'Generated action',
+      groupPath: String(action.groupPath || 'Generated').trim() || 'Generated',
+      resetOnPress: Boolean(action.behaviorResetOnPress),
+      approval: action.approval || 'pending'
+    }
+  };
+}
+
+function approvalActionToGeneratorAction(item) {
+  const intent = {
+    sourceShortcuts: item.shortcuts
+  };
+
+  if (item.states.length > 0) {
+    intent.states = item.states;
+  }
+
+  return {
+    id: item.id,
+    name: item.name,
+    description: item.description,
+    groupPath: item.groupPath,
+    actionKind: item.actionKind,
+    intent,
+    behavior: {
+      keyboardShortcuts: item.shortcuts,
+      resetOnPress: item.resetOnPress
+    }
+  };
+}
+
+function buildGeneratorPayloadFromApproval(payload) {
+  const approvalActions = Array.isArray(payload.approvalActions) ? payload.approvalActions : [];
+  const validated = approvalActions.map((item, index) => validateApprovalAction(item, index));
+  const invalid = validated.filter((item) => !item.valid);
+  const nonApproved = validated.filter((item) => item.normalized.approval !== 'approved');
+
+  if (invalid.length > 0 || nonApproved.length > 0) {
+    return {
+      ok: false,
+      errors: {
+        invalid,
+        nonApproved: nonApproved.map((item) => ({
+          id: item.id,
+          message: 'Action is not approved.'
+        }))
+      }
+    };
+  }
+
+  const approved = validated.map((item) => item.normalized);
+
+  return {
+    ok: true,
+    generatorPayload: {
+      projectName: toPascalCase(payload.projectName || 'GeneratedPlugin', 'GeneratedPlugin'),
+      displayName: payload.displayName || 'Generated Plugin',
+      author: payload.author || 'LogiAutoActions User',
+      version: payload.version || '1.0.0',
+      minimumLoupedeckVersion: payload.minimumLoupedeckVersion || '6.0',
+      supportedDevices: Array.isArray(payload.supportedDevices) && payload.supportedDevices.length > 0
+        ? payload.supportedDevices
+        : ['LoupedeckCtFamily'],
+      actions: approved.map((item) => approvalActionToGeneratorAction(item))
+    },
+    approvedActions: approved
+  };
+}
+
+function renderActionForApproval(payload) {
+  const pluginName = toPascalCase(payload.pluginName || 'GeneratedPlugin', 'GeneratedPlugin');
+  const validated = validateApprovalAction(payload.action || {}, 0);
+  if (!validated.valid) {
+    return {
+      ok: false,
+      errors: validated.errors
+    };
+  }
+
+  const action = approvalActionToGeneratorAction(validated.normalized);
+  const classInfo = createActionClass(pluginName, action);
+  const kindInfo = getActionKindInfo(action.actionKind);
+
+  return {
+    ok: true,
+    rendered: {
+      className: classInfo.className,
+      fileName: classInfo.fileName,
+      baseClass: kindInfo.baseClass,
+      methods: kindInfo.methods,
+      code: classInfo.content
+    }
+  };
+}
+
 function writePluginArtifacts(payload) {
   const pluginName = toPascalCase(payload.projectName, 'GeneratedPlugin');
   const artifactRoot = path.join(ARTIFACTS_ROOT, pluginName);
@@ -473,8 +629,48 @@ function writePluginArtifacts(payload) {
   };
 }
 
-function buildMockBuildResult(payload) {
+function buildMockBuildResult(payload, options = {}) {
   const artifacts = writePluginArtifacts(payload);
+  const strictRealBuild = Boolean(options.strictRealBuild);
+
+  if (strictRealBuild && !artifacts.realBuildUsed) {
+    return {
+      ok: false,
+      pluginName: artifacts.pluginName,
+      outputPath: path.relative(__dirname, artifacts.artifactRoot).split(path.sep).join('/'),
+      generatedFiles: artifacts.generatedFiles,
+      selectedIcons: [],
+      warnings: artifacts.warnings,
+      error: {
+        code: 'REAL_BUILD_REQUIRED',
+        stage: 'build',
+        message: 'Real build mode is required but prerequisites were not met or compilation failed.',
+        details: artifacts.warnings
+      },
+      build: {
+        attempted: true,
+        succeeded: false,
+        mode: artifacts.realBuildUsed ? 'real' : 'fallback',
+        diagnostics: artifacts.diagnostics
+      },
+      package: {
+        filePath: null,
+        verifyAttempted: false,
+        verifyPassed: false,
+        verifyMessage: 'Skipped because strict real build mode requires a real compile.',
+        verifyOutput: null
+      },
+      actionSummary: (payload.actions || []).map((action) => ({
+        id: action.id,
+        name: action.name,
+        actionKind: action.actionKind,
+        keyboardShortcuts: action.behavior && Array.isArray(action.behavior.keyboardShortcuts)
+          ? action.behavior.keyboardShortcuts
+          : []
+      }))
+    };
+  }
+
   const verification = verifyLplug4Package(artifacts.packagePath, artifacts.diagnostics);
   const verificationPassed = verification.passed;
   const verificationError = !verificationPassed
@@ -527,7 +723,7 @@ function buildMockBuildResult(payload) {
   };
 }
 
-function runMockBuildJob(jobId, payload) {
+function runMockBuildJob(jobId, payload, options = {}) {
   const job = mockBuildJobs.get(jobId);
   if (!job) {
     return;
@@ -561,7 +757,7 @@ function runMockBuildJob(jobId, payload) {
       return;
     }
     try {
-      const result = buildMockBuildResult(payload);
+      const result = buildMockBuildResult(payload, options);
       active.status = result.ok ? 'completed' : 'failed';
       active.updatedAt = now();
       active.result = result;
@@ -749,6 +945,70 @@ app.post('/api/generator/preview-actions', (req, res) => {
   res.json({
     ok: true,
     preview
+  });
+});
+
+app.post('/api/generator/render-action', (req, res) => {
+  const payload = req.body || {};
+  const rendered = renderActionForApproval(payload);
+
+  if (!rendered.ok) {
+    res.status(400).json({
+      ok: false,
+      code: 'INVALID_ACTION_FOR_RENDER',
+      errors: rendered.errors
+    });
+    return;
+  }
+
+  res.json({
+    ok: true,
+    rendered: rendered.rendered
+  });
+});
+
+app.post('/api/generator/build-from-approval', (req, res) => {
+  const payload = req.body || {};
+  const built = buildGeneratorPayloadFromApproval(payload);
+
+  if (!built.ok) {
+    res.status(400).json({
+      ok: false,
+      code: 'APPROVAL_REQUIRED',
+      stage: 'approval',
+      errors: built.errors
+    });
+    return;
+  }
+
+  const result = validateGeneratorRequest(built.generatorPayload);
+  if (!result.valid) {
+    res.status(400).json({
+      ok: false,
+      code: 'INVALID_INPUT',
+      stage: 'intake',
+      errors: result.errors
+    });
+    return;
+  }
+
+  const strictRealBuild = Boolean(payload.requireRealBuildOnly);
+  const jobId = crypto.randomUUID();
+  const createdAt = new Date().toISOString();
+  mockBuildJobs.set(jobId, {
+    jobId,
+    status: 'queued',
+    createdAt,
+    updatedAt: createdAt,
+    result: null
+  });
+
+  runMockBuildJob(jobId, built.generatorPayload, { strictRealBuild });
+
+  res.status(202).json({
+    ok: true,
+    jobId,
+    status: 'queued'
   });
 });
 
