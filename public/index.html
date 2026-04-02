@@ -85,8 +85,9 @@
             <div class="actions-row">
               <button id="runDiagnostics" class="button button-secondary" type="button">Check Local Tools</button>
               <button id="checkReadiness" class="button button-secondary" type="button">Check Readiness</button>
+              <button id="generateApprovalCards" class="button button-secondary" type="button">Generate Approval Cards</button>
               <button id="rankIcons" class="button" type="button">Suggest Best Icon</button>
-              <button id="runMockBuild" class="button" type="button">Run Chrome Test Build</button>
+              <button id="runMockBuild" class="button" type="button" disabled>Run Approved Build</button>
             </div>
           </div>
           <p class="subtle">Local toolchain diagnostics:</p>
@@ -101,8 +102,11 @@
           <p class="subtle">Suggested icons:</p>
           <div id="iconResults" class="results">Click "Suggest Best Icon" to see recommendations.</div>
 
-          <p class="subtle">Mock build status:</p>
-          <div id="buildResult" class="readiness">Run "Chrome Test Build" to simulate generation and packaging.</div>
+          <p class="subtle">Action class approval:</p>
+          <div id="approvalResults" class="results">Generate approval cards to review each class before build.</div>
+
+          <p class="subtle">Build status:</p>
+          <div id="buildResult" class="readiness">Approve all cards, then run "Approved Build".</div>
         </section>
       </section>
     </main>

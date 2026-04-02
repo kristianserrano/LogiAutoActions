@@ -141,6 +141,223 @@ function createActionClass(pluginName, action) {
   };
 }
 
+function getActionKindInfo(actionKind) {
+  if (actionKind === 'toggle') {
+    return {
+      baseClass: 'PluginDynamicCommand',
+      methods: ['RunCommand', 'GetCommandDisplayName']
+    };
+  }
+
+  if (actionKind === 'multistate') {
+    return {
+      baseClass: 'PluginMultistateDynamicCommand',
+      methods: ['Constructor (states)']
+    };
+  }
+
+  if (actionKind === 'adjustment') {
+    return {
+      baseClass: 'PluginDynamicAdjustment',
+      methods: ['ApplyAdjustment', 'RunCommand', 'GetAdjustmentValue']
+    };
+  }
+
+  return {
+    baseClass: 'PluginDynamicCommand',
+    methods: ['RunCommand']
+  };
+}
+
+function toActionNameFromContext(context, fallback) {
+  const raw = String(context || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!raw) {
+    return fallback;
+  }
+
+  const cleaned = raw
+    .replace(/\s*[-–:|].*$/, '')
+    .replace(/\b(?:ctrl|cmd|command|control|alt|shift|option|win|meta|fn)\b.*$/i, '')
+    .trim();
+
+  return cleaned || fallback;
+}
+
+function buildDraftActions(payload) {
+  const actionName = String(payload.actionName || '').trim() || 'Generated Action';
+  const actionDescription = String(payload.actionDescription || '').trim() || 'Generated action';
+  const actionType = String(payload.actionType || 'single').trim();
+  const states = Array.isArray(payload.states) ? payload.states.filter(Boolean) : [];
+  const shortcuts = Array.isArray(payload.shortcuts) ? payload.shortcuts : [];
+
+  if (actionType === 'toggle' && shortcuts.length >= 2) {
+    return [
+      {
+        id: toSafeIdentifier(toPascalCase(actionName, 'ToggleAction').toLowerCase(), 'toggle_action'),
+        name: actionName,
+        description: actionDescription,
+        groupPath: 'Generated',
+        actionKind: 'toggle',
+        intent: {
+          states: states.length === 2 ? states : ['Off', 'On'],
+          sourceShortcuts: [shortcuts[0].shortcut, shortcuts[1].shortcut]
+        },
+        behavior: {
+          keyboardShortcuts: [shortcuts[0].shortcut, shortcuts[1].shortcut]
+        },
+        confidence: 0.86,
+        status: 'ready'
+      }
+    ];
+  }
+
+  if (actionType === 'multistate' && shortcuts.length >= 3) {
+    const generatedStates = states.length >= 3
+      ? states
+      : shortcuts.slice(0, 3).map((item, index) => toActionNameFromContext(item.context, `State ${index + 1}`));
+
+    return [
+      {
+        id: toSafeIdentifier(toPascalCase(actionName, 'MultistateAction').toLowerCase(), 'multistate_action'),
+        name: actionName,
+        description: actionDescription,
+        groupPath: 'Generated',
+        actionKind: 'multistate',
+        intent: {
+          states: generatedStates,
+          sourceShortcuts: shortcuts.map((item) => item.shortcut)
+        },
+        behavior: {
+          keyboardShortcuts: shortcuts.map((item) => item.shortcut)
+        },
+        confidence: 0.84,
+        status: 'ready'
+      }
+    ];
+  }
+
+  if (shortcuts.length > 0) {
+    return shortcuts.map((entry, index) => {
+      const inferredName = toActionNameFromContext(entry.context, `${actionName} ${index + 1}`);
+      const idBase = toPascalCase(inferredName, `GeneratedAction${index + 1}`).toLowerCase();
+      return {
+        id: toSafeIdentifier(idBase, `generated_action_${index + 1}`),
+        name: inferredName,
+        description: `Runs ${entry.shortcut}`,
+        groupPath: 'Generated',
+        actionKind: 'command',
+        intent: {
+          sourceShortcuts: [entry.shortcut],
+          states: []
+        },
+        behavior: {
+          keyboardShortcuts: [entry.shortcut]
+        },
+        confidence: 0.88,
+        status: 'ready'
+      };
+    });
+  }
+
+  return [
+    {
+      id: toSafeIdentifier(toPascalCase(actionName, 'GeneratedAction').toLowerCase(), 'generated_action'),
+      name: actionName,
+      description: actionDescription,
+      groupPath: 'Generated',
+      actionKind: actionType === 'single' ? 'command' : actionType,
+      intent: {
+        states,
+        sourceShortcuts: []
+      },
+      behavior: {
+        keyboardShortcuts: []
+      },
+      confidence: 0.55,
+      status: 'needs-review'
+    }
+  ];
+}
+
+function createManifestPreview(payload, pluginName) {
+  const packageName = pluginName.replace(/plugin$/i, '') || 'GeneratedAction';
+  const pluginBinaryName = `${packageName}Plugin.dll`;
+  return {
+    displayName: payload.displayName || `${pluginName} Plugin`,
+    version: payload.version || '1.0.0',
+    author: payload.author || 'LogiAutoActions User',
+    pluginFileName: pluginBinaryName,
+    minimumLoupedeckVersion: payload.minimumLoupedeckVersion || '6.0'
+  };
+}
+
+function buildApprovalPreview(payload) {
+  const projectName = toPascalCase(payload.projectName || `${payload.actionName || 'Generated'}Plugin`, 'GeneratedPlugin');
+  const draftActions = buildDraftActions(payload);
+  const manifestPreview = createManifestPreview(payload, projectName);
+
+  const actions = draftActions.map((action) => {
+    const classInfo = createActionClass(projectName, action);
+    const kindInfo = getActionKindInfo(action.actionKind);
+    const rankedIcons = rankIcons({
+      actionName: action.name,
+      description: action.description,
+      actionType: action.actionKind,
+      states: action.intent && Array.isArray(action.intent.states) ? action.intent.states : [],
+      candidates: iconCandidates
+    });
+
+    const selectedIcon = rankedIcons.selected
+      ? {
+        path: rankedIcons.selected.path,
+        pack: rankedIcons.selected.pack,
+        score: rankedIcons.selected.score
+      }
+      : null;
+
+    const shortcutSummary = action.behavior && Array.isArray(action.behavior.keyboardShortcuts)
+      ? action.behavior.keyboardShortcuts
+      : [];
+
+    return {
+      ...action,
+      icon: selectedIcon,
+      quickView: {
+        status: action.status,
+        confidence: action.confidence,
+        shortcutSummary
+      },
+      behaviorView: {
+        plainLanguage: `${action.name} runs ${shortcutSummary.join(', ') || 'a shortcut mapping to be defined'}.`,
+        states: action.intent && Array.isArray(action.intent.states) ? action.intent.states : [],
+        resetOnPress: Boolean(action.behavior && action.behavior.resetOnPress)
+      },
+      developerView: {
+        className: classInfo.className,
+        fileName: classInfo.fileName,
+        baseClass: kindInfo.baseClass,
+        methods: kindInfo.methods,
+        code: classInfo.content,
+        manifestPreview
+      }
+    };
+  });
+
+  return {
+    pluginName: projectName,
+    manifestPreview,
+    actions,
+    summary: {
+      total: actions.length,
+      ready: actions.filter((item) => item.quickView.status === 'ready').length,
+      needsReview: actions.filter((item) => item.quickView.status !== 'ready').length
+    }
+  };
+}
+
 function writePluginArtifacts(payload) {
   const pluginName = toPascalCase(payload.projectName, 'GeneratedPlugin');
   const artifactRoot = path.join(ARTIFACTS_ROOT, pluginName);
@@ -523,6 +740,15 @@ app.post('/api/generator/validate-request', (req, res) => {
   res.json({
     ok: true,
     message: 'Generator request is valid against the contract.'
+  });
+});
+
+app.post('/api/generator/preview-actions', (req, res) => {
+  const payload = req.body || {};
+  const preview = buildApprovalPreview(payload);
+  res.json({
+    ok: true,
+    preview
   });
 });
 
