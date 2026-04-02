@@ -89,6 +89,10 @@
               <button id="rankIcons" class="button" type="button">Suggest Best Icon</button>
               <button id="runMockBuild" class="button" type="button" disabled>Run Approved Build</button>
             </div>
+            <label class="toggle-inline">
+              <input id="requireRealBuildOnly" type="checkbox" />
+              Require real build only (no fallback binaries)
+            </label>
           </div>
           <p class="subtle">Local toolchain diagnostics:</p>
           <div id="diagnosticsResult" class="readiness">Click "Check Local Tools" to test dotnet and LogiPluginTool.</div>

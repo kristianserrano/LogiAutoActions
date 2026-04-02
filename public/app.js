@@ -22,6 +22,7 @@ const rankIconsBtn = document.getElementById('rankIcons');
 const generateApprovalCardsBtn = document.getElementById('generateApprovalCards');
 const runMockBuildBtn = document.getElementById('runMockBuild');
 const runDiagnosticsBtn = document.getElementById('runDiagnostics');
+const requireRealBuildOnlyEl = document.getElementById('requireRealBuildOnly');
 
 let extractedShortcuts = [];
 let approvalActions = [];
@@ -98,6 +99,7 @@ function buildPreviewPayload() {
 }
 
 function buildGeneratorPayloadFromApprovals() {
+  const approvedActions = approvalActions.filter((item) => item.approval === 'approved');
   return {
     projectName: approvalPluginName || `${toPascalCase(actionNameEl.value.trim() || 'Generated')}Plugin`,
     displayName: `${actionNameEl.value.trim() || 'Generated'} Plugin`,
@@ -105,22 +107,92 @@ function buildGeneratorPayloadFromApprovals() {
     version: '1.0.0',
     minimumLoupedeckVersion: '6.0',
     supportedDevices: ['LoupedeckCtFamily'],
-    actions: approvalActions.map((item, index) => ({
-      id: item.id || `generated_action_${index + 1}`,
-      name: item.name,
-      description: item.description || 'Generated action',
-      groupPath: item.groupPath || 'Generated',
-      actionKind: item.actionKind,
-      intent: {
-        states: item.intent && Array.isArray(item.intent.states) ? item.intent.states : [],
+    actions: approvedActions.map((item, index) => {
+      const states = item.intent && Array.isArray(item.intent.states)
+        ? item.intent.states.filter(Boolean)
+        : [];
+
+      const intent = {
         sourceShortcuts: item.shortcuts || []
-      },
-      behavior: {
-        keyboardShortcuts: item.shortcuts || [],
-        resetOnPress: Boolean(item.behaviorResetOnPress)
+      };
+
+      if (states.length > 0) {
+        intent.states = states;
       }
-    }))
+
+      return {
+        id: item.id || `generated_action_${index + 1}`,
+        name: item.name,
+        description: item.description || 'Generated action',
+        groupPath: item.groupPath || 'Generated',
+        actionKind: item.actionKind,
+        intent,
+        behavior: {
+          keyboardShortcuts: item.shortcuts || [],
+          resetOnPress: Boolean(item.behaviorResetOnPress)
+        }
+      };
+    })
   };
+}
+
+function validateApprovalAction(action) {
+  const errors = [];
+  const name = String(action.name || '').trim();
+  const shortcuts = Array.isArray(action.shortcuts) ? action.shortcuts.filter(Boolean) : [];
+  const states = Array.isArray(action.states) ? action.states.filter(Boolean) : [];
+
+  if (!name) {
+    errors.push('Action name is required.');
+  }
+
+  if (action.actionKind === 'toggle') {
+    if (shortcuts.length !== 2) {
+      errors.push('Toggle actions require exactly 2 shortcuts.');
+    }
+    if (states.length !== 2) {
+      errors.push('Toggle actions require exactly 2 states.');
+    }
+  }
+
+  if (action.actionKind === 'multistate') {
+    if (shortcuts.length < 3) {
+      errors.push('Multistate actions require at least 3 shortcuts.');
+    }
+    if (states.length < 3) {
+      errors.push('Multistate actions require at least 3 states.');
+    }
+  }
+
+  if ((action.actionKind === 'command' || action.actionKind === 'adjustment') && shortcuts.length < 1) {
+    errors.push('At least one shortcut is required.');
+  }
+
+  return errors;
+}
+
+function buildSimpleDiff(originalCode, updatedCode) {
+  const before = String(originalCode || '').split('\n');
+  const after = String(updatedCode || '').split('\n');
+  const size = Math.max(before.length, after.length);
+  const lines = [];
+
+  for (let index = 0; index < size; index += 1) {
+    const left = before[index];
+    const right = after[index];
+    if (left === right) {
+      lines.push(`  ${left || ''}`);
+      continue;
+    }
+    if (typeof left === 'string') {
+      lines.push(`- ${left}`);
+    }
+    if (typeof right === 'string') {
+      lines.push(`+ ${right}`);
+    }
+  }
+
+  return lines.join('\n');
 }
 
 function countApprovedActions() {
@@ -129,7 +201,10 @@ function countApprovedActions() {
 
 function updateBuildButtonState() {
   const hasActions = approvalActions.length > 0;
-  const fullyApproved = hasActions && approvalActions.every((item) => item.approval === 'approved');
+  const fullyApproved = hasActions && approvalActions.every((item) => {
+    const errors = validateApprovalAction(item);
+    return item.approval === 'approved' && errors.length === 0;
+  });
   runMockBuildBtn.disabled = !fullyApproved;
 }
 
@@ -153,6 +228,38 @@ function approvalClass(value) {
   return 'chip-approval-pending';
 }
 
+async function refreshActionCode(action) {
+  const response = await fetch('/api/generator/render-action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      pluginName: approvalPluginName,
+      action: {
+        id: action.id,
+        name: action.name,
+        description: action.description,
+        actionKind: action.actionKind,
+        shortcuts: action.shortcuts,
+        states: action.states,
+        groupPath: action.groupPath,
+        behaviorResetOnPress: action.behaviorResetOnPress,
+        approval: action.approval
+      }
+    })
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data.ok) {
+    throw new Error('Unable to refresh generated class preview.');
+  }
+
+  action.className = data.rendered.className;
+  action.baseClass = data.rendered.baseClass;
+  action.methods = data.rendered.methods;
+  action.codePreview = data.rendered.code;
+  action.diffPreview = buildSimpleDiff(action.originalCodePreview || '', action.codePreview || '');
+}
+
 function renderApprovalCards() {
   if (!approvalActions.length) {
     approvalResultsEl.textContent = 'Generate approval cards to review each class before build.';
@@ -167,6 +274,8 @@ function renderApprovalCards() {
       ${approvedCount}/${approvalActions.length} actions approved. Approve all actions to enable build.
     </div>
     ${approvalActions.map((item) => {
+      const validationErrors = validateApprovalAction(item);
+      const approveDisabled = validationErrors.length > 0;
       return `
         <article class="approval-card" data-action-id="${item.id}">
           <div class="result-row">
@@ -186,8 +295,11 @@ function renderApprovalCards() {
             </label>
           </div>
           <div class="result-reasons">${item.behaviorPlainLanguage || ''}</div>
+          ${validationErrors.length > 0
+            ? `<div class="approval-errors">${validationErrors.join(' | ')}</div>`
+            : ''}
           <div class="actions-row">
-            <button class="button button-secondary approval-approve" type="button" data-action-id="${item.id}">Approve</button>
+            <button class="button button-secondary approval-approve" type="button" data-action-id="${item.id}" ${approveDisabled ? 'disabled' : ''}>Approve</button>
             <button class="button button-secondary approval-reject" type="button" data-action-id="${item.id}">Reject</button>
           </div>
           <details class="advanced-details">
@@ -201,13 +313,17 @@ function renderApprovalCards() {
             <div class="result-path">Methods: ${(item.methods || []).join(', ')}</div>
             <pre class="output">${item.codePreview || ''}</pre>
           </details>
+          <details class="advanced-details">
+            <summary>Code diff from original</summary>
+            <pre class="output">${item.diffPreview || 'No changes from generated baseline.'}</pre>
+          </details>
         </article>
       `;
     }).join('')}
   `;
 
   for (const input of approvalResultsEl.querySelectorAll('.approval-name')) {
-    input.addEventListener('input', (event) => {
+    input.addEventListener('change', async (event) => {
       const id = event.target.dataset.actionId;
       const action = approvalActions.find((item) => item.id === id);
       if (!action) {
@@ -215,12 +331,17 @@ function renderApprovalCards() {
       }
       action.name = event.target.value.trim() || action.name;
       action.approval = 'pending';
+      try {
+        await refreshActionCode(action);
+      } catch (error) {
+        setReadiness('warn', error.message);
+      }
       renderApprovalCards();
     });
   }
 
   for (const input of approvalResultsEl.querySelectorAll('.approval-shortcuts')) {
-    input.addEventListener('input', (event) => {
+    input.addEventListener('change', async (event) => {
       const id = event.target.dataset.actionId;
       const action = approvalActions.find((item) => item.id === id);
       if (!action) {
@@ -231,6 +352,11 @@ function renderApprovalCards() {
         .map((item) => item.trim())
         .filter((item) => item.length > 0);
       action.approval = 'pending';
+      try {
+        await refreshActionCode(action);
+      } catch (error) {
+        setReadiness('warn', error.message);
+      }
       renderApprovalCards();
     });
   }
@@ -462,6 +588,12 @@ checkReadinessBtn.addEventListener('click', async () => {
     return;
   }
 
+  const invalidCount = approvalActions.filter((item) => validateApprovalAction(item).length > 0).length;
+  if (invalidCount > 0) {
+    setReadiness('warn', `${invalidCount} action(s) have validation issues.`);
+    return;
+  }
+
   try {
     const response = await fetch('/api/generator/validate-request', {
       method: 'POST',
@@ -492,10 +624,19 @@ runMockBuildBtn.addEventListener('click', async () => {
     return;
   }
 
-  try {
-    const payload = buildGeneratorPayloadFromApprovals();
+  if (approvalActions.some((item) => validateApprovalAction(item).length > 0)) {
+    setBuildStatus('warn', 'Fix validation errors on approval cards before build.');
+    return;
+  }
 
-    const startResponse = await fetch('/api/generator/mock-build', {
+  try {
+    const payload = {
+      ...buildGeneratorPayloadFromApprovals(),
+      approvalActions,
+      requireRealBuildOnly: Boolean(requireRealBuildOnlyEl && requireRealBuildOnlyEl.checked)
+    };
+
+    const startResponse = await fetch('/api/generator/build-from-approval', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -619,6 +760,7 @@ generateApprovalCardsBtn.addEventListener('click', async () => {
       id: item.id,
       name: item.name,
       description: item.description,
+      groupPath: item.groupPath || 'Generated',
       actionKind: item.actionKind,
       icon: item.icon,
       shortcuts: item.behaviorView && Array.isArray(item.behaviorView.shortcutSummary)
@@ -631,6 +773,8 @@ generateApprovalCardsBtn.addEventListener('click', async () => {
       baseClass: item.developerView ? item.developerView.baseClass : 'PluginDynamicCommand',
       methods: item.developerView && Array.isArray(item.developerView.methods) ? item.developerView.methods : [],
       codePreview: item.developerView ? item.developerView.code : '',
+      originalCodePreview: item.developerView ? item.developerView.code : '',
+      diffPreview: '',
       confidence: item.quickView ? item.quickView.confidence : 0,
       approval: 'pending'
     }));
