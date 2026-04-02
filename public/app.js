@@ -2,6 +2,7 @@ const statusEl = document.getElementById('status');
 const shortcutResultsEl = document.getElementById('shortcutResults');
 const readinessResultEl = document.getElementById('readinessResult');
 const iconResultsEl = document.getElementById('iconResults');
+const approvalResultsEl = document.getElementById('approvalResults');
 const buildResultEl = document.getElementById('buildResult');
 const diagnosticsResultEl = document.getElementById('diagnosticsResult');
 
@@ -18,10 +19,13 @@ const extractFromUrlBtn = document.getElementById('extractFromUrl');
 const extractFromTextBtn = document.getElementById('extractFromText');
 const checkReadinessBtn = document.getElementById('checkReadiness');
 const rankIconsBtn = document.getElementById('rankIcons');
+const generateApprovalCardsBtn = document.getElementById('generateApprovalCards');
 const runMockBuildBtn = document.getElementById('runMockBuild');
 const runDiagnosticsBtn = document.getElementById('runDiagnostics');
 
 let extractedShortcuts = [];
+let approvalActions = [];
+let approvalPluginName = 'GeneratedPlugin';
 
 function toPascalCase(value) {
   const words = String(value || '')
@@ -47,6 +51,10 @@ function mapActionKind(actionType) {
 }
 
 function buildValidationPayload() {
+  if (approvalActions.length > 0) {
+    return buildGeneratorPayloadFromApprovals();
+  }
+
   const actionName = actionNameEl.value.trim() || 'Generated Action';
   const actionType = actionTypeEl.value;
   const states = getStates();
@@ -71,6 +79,187 @@ function buildValidationPayload() {
       }
     ]
   };
+}
+
+function buildPreviewPayload() {
+  return {
+    actionName: actionNameEl.value.trim(),
+    actionDescription: actionDescriptionEl.value.trim(),
+    actionType: actionTypeEl.value,
+    states: getStates(),
+    shortcuts: extractedShortcuts,
+    projectName: `${toPascalCase(actionNameEl.value.trim() || 'Generated')}Plugin`,
+    displayName: `${actionNameEl.value.trim() || 'Generated'} Plugin`,
+    author: 'LogiAutoActions User',
+    version: '1.0.0',
+    minimumLoupedeckVersion: '6.0',
+    supportedDevices: ['LoupedeckCtFamily']
+  };
+}
+
+function buildGeneratorPayloadFromApprovals() {
+  return {
+    projectName: approvalPluginName || `${toPascalCase(actionNameEl.value.trim() || 'Generated')}Plugin`,
+    displayName: `${actionNameEl.value.trim() || 'Generated'} Plugin`,
+    author: 'LogiAutoActions User',
+    version: '1.0.0',
+    minimumLoupedeckVersion: '6.0',
+    supportedDevices: ['LoupedeckCtFamily'],
+    actions: approvalActions.map((item, index) => ({
+      id: item.id || `generated_action_${index + 1}`,
+      name: item.name,
+      description: item.description || 'Generated action',
+      groupPath: item.groupPath || 'Generated',
+      actionKind: item.actionKind,
+      intent: {
+        states: item.intent && Array.isArray(item.intent.states) ? item.intent.states : [],
+        sourceShortcuts: item.shortcuts || []
+      },
+      behavior: {
+        keyboardShortcuts: item.shortcuts || [],
+        resetOnPress: Boolean(item.behaviorResetOnPress)
+      }
+    }))
+  };
+}
+
+function countApprovedActions() {
+  return approvalActions.filter((item) => item.approval === 'approved').length;
+}
+
+function updateBuildButtonState() {
+  const hasActions = approvalActions.length > 0;
+  const fullyApproved = hasActions && approvalActions.every((item) => item.approval === 'approved');
+  runMockBuildBtn.disabled = !fullyApproved;
+}
+
+function approvalLabel(value) {
+  if (value === 'approved') {
+    return 'Approved';
+  }
+  if (value === 'rejected') {
+    return 'Rejected';
+  }
+  return 'Needs review';
+}
+
+function approvalClass(value) {
+  if (value === 'approved') {
+    return 'chip-approval-ok';
+  }
+  if (value === 'rejected') {
+    return 'chip-approval-warn';
+  }
+  return 'chip-approval-pending';
+}
+
+function renderApprovalCards() {
+  if (!approvalActions.length) {
+    approvalResultsEl.textContent = 'Generate approval cards to review each class before build.';
+    updateBuildButtonState();
+    return;
+  }
+
+  const approvedCount = countApprovedActions();
+
+  approvalResultsEl.innerHTML = `
+    <div class="approval-summary">
+      ${approvedCount}/${approvalActions.length} actions approved. Approve all actions to enable build.
+    </div>
+    ${approvalActions.map((item) => {
+      return `
+        <article class="approval-card" data-action-id="${item.id}">
+          <div class="result-row">
+            <strong>${item.name}</strong>
+            <span class="chip ${approvalClass(item.approval)}">${approvalLabel(item.approval)}</span>
+            <span class="chip">${item.actionKind}</span>
+            ${item.icon && item.icon.path ? `<span class="chip">${labelPack(item.icon.pack || 'unknown')}</span>` : ''}
+          </div>
+          <div class="approval-grid">
+            <label>
+              Action name
+              <input class="approval-input approval-name" type="text" value="${item.name}" data-action-id="${item.id}" />
+            </label>
+            <label>
+              Keyboard shortcuts (comma separated)
+              <input class="approval-input approval-shortcuts" type="text" value="${(item.shortcuts || []).join(', ')}" data-action-id="${item.id}" />
+            </label>
+          </div>
+          <div class="result-reasons">${item.behaviorPlainLanguage || ''}</div>
+          <div class="actions-row">
+            <button class="button button-secondary approval-approve" type="button" data-action-id="${item.id}">Approve</button>
+            <button class="button button-secondary approval-reject" type="button" data-action-id="${item.id}">Reject</button>
+          </div>
+          <details class="advanced-details">
+            <summary>Behavior details</summary>
+            <div class="result-path">States: ${(item.states || []).join(', ') || 'None'}</div>
+            <div class="result-path">Confidence: ${Math.round((item.confidence || 0) * 100)}%</div>
+          </details>
+          <details class="advanced-details">
+            <summary>Developer details</summary>
+            <div class="result-path">Class: ${item.className} (${item.baseClass})</div>
+            <div class="result-path">Methods: ${(item.methods || []).join(', ')}</div>
+            <pre class="output">${item.codePreview || ''}</pre>
+          </details>
+        </article>
+      `;
+    }).join('')}
+  `;
+
+  for (const input of approvalResultsEl.querySelectorAll('.approval-name')) {
+    input.addEventListener('input', (event) => {
+      const id = event.target.dataset.actionId;
+      const action = approvalActions.find((item) => item.id === id);
+      if (!action) {
+        return;
+      }
+      action.name = event.target.value.trim() || action.name;
+      action.approval = 'pending';
+      renderApprovalCards();
+    });
+  }
+
+  for (const input of approvalResultsEl.querySelectorAll('.approval-shortcuts')) {
+    input.addEventListener('input', (event) => {
+      const id = event.target.dataset.actionId;
+      const action = approvalActions.find((item) => item.id === id);
+      if (!action) {
+        return;
+      }
+      action.shortcuts = event.target.value
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+      action.approval = 'pending';
+      renderApprovalCards();
+    });
+  }
+
+  for (const button of approvalResultsEl.querySelectorAll('.approval-approve')) {
+    button.addEventListener('click', (event) => {
+      const id = event.target.dataset.actionId;
+      const action = approvalActions.find((item) => item.id === id);
+      if (!action) {
+        return;
+      }
+      action.approval = 'approved';
+      renderApprovalCards();
+    });
+  }
+
+  for (const button of approvalResultsEl.querySelectorAll('.approval-reject')) {
+    button.addEventListener('click', (event) => {
+      const id = event.target.dataset.actionId;
+      const action = approvalActions.find((item) => item.id === id);
+      if (!action) {
+        return;
+      }
+      action.approval = 'rejected';
+      renderApprovalCards();
+    });
+  }
+
+  updateBuildButtonState();
 }
 
 function setReadiness(kind, message) {
@@ -262,6 +451,17 @@ rankIconsBtn.addEventListener('click', async () => {
 checkReadinessBtn.addEventListener('click', async () => {
   setReadiness('info', 'Checking your inputs...');
 
+  if (!approvalActions.length) {
+    setReadiness('warn', 'Generate approval cards first, then approve each action.');
+    return;
+  }
+
+  const pendingCount = approvalActions.filter((item) => item.approval !== 'approved').length;
+  if (pendingCount > 0) {
+    setReadiness('warn', `${pendingCount} action(s) still need approval.`);
+    return;
+  }
+
   try {
     const response = await fetch('/api/generator/validate-request', {
       method: 'POST',
@@ -285,14 +485,15 @@ checkReadinessBtn.addEventListener('click', async () => {
 });
 
 runMockBuildBtn.addEventListener('click', async () => {
-  setBuildStatus('info', 'Starting Chrome test build...');
+  setBuildStatus('info', 'Starting approved build...');
+
+  if (!approvalActions.length || approvalActions.some((item) => item.approval !== 'approved')) {
+    setBuildStatus('warn', 'Approve all actions before running build.');
+    return;
+  }
 
   try {
-    const payloadResponse = await fetch('/api/generator/test-request/chrome-shortcuts');
-    const payload = await payloadResponse.json();
-    if (!payloadResponse.ok) {
-      throw new Error(payload.error || 'Could not load Chrome test payload.');
-    }
+    const payload = buildGeneratorPayloadFromApprovals();
 
     const startResponse = await fetch('/api/generator/mock-build', {
       method: 'POST',
@@ -341,7 +542,7 @@ runMockBuildBtn.addEventListener('click', async () => {
           const actionCount = Array.isArray(statusData.result && statusData.result.actionSummary)
             ? statusData.result.actionSummary.length
             : 0;
-          setBuildStatus('ok', `Mock build completed. Generated ${actionCount} actions and packaged a .lplug4 artifact.`);
+          setBuildStatus('ok', `Build completed. Generated ${actionCount} approved actions and packaged a .lplug4 artifact.`);
           return;
         }
 
@@ -399,6 +600,50 @@ runDiagnosticsBtn.addEventListener('click', async () => {
   }
 });
 
+generateApprovalCardsBtn.addEventListener('click', async () => {
+  approvalResultsEl.textContent = 'Generating approval cards...';
+
+  try {
+    const response = await fetch('/api/generator/preview-actions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildPreviewPayload())
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || 'Could not generate approval cards.');
+    }
+
+    approvalPluginName = data.preview && data.preview.pluginName ? data.preview.pluginName : 'GeneratedPlugin';
+    approvalActions = (data.preview && Array.isArray(data.preview.actions) ? data.preview.actions : []).map((item) => ({
+      id: item.id,
+      name: item.name,
+      description: item.description,
+      actionKind: item.actionKind,
+      icon: item.icon,
+      shortcuts: item.behaviorView && Array.isArray(item.behaviorView.shortcutSummary)
+        ? item.behaviorView.shortcutSummary
+        : [],
+      states: item.behaviorView && Array.isArray(item.behaviorView.states) ? item.behaviorView.states : [],
+      behaviorPlainLanguage: item.behaviorView ? item.behaviorView.plainLanguage : '',
+      behaviorResetOnPress: item.behaviorView ? item.behaviorView.resetOnPress : false,
+      className: item.developerView ? item.developerView.className : 'GeneratedAction',
+      baseClass: item.developerView ? item.developerView.baseClass : 'PluginDynamicCommand',
+      methods: item.developerView && Array.isArray(item.developerView.methods) ? item.developerView.methods : [],
+      codePreview: item.developerView ? item.developerView.code : '',
+      confidence: item.quickView ? item.quickView.confidence : 0,
+      approval: 'pending'
+    }));
+
+    renderApprovalCards();
+    setReadiness('info', 'Review each action card and approve before building.');
+  } catch (error) {
+    approvalActions = [];
+    renderApprovalCards();
+    setReadiness('warn', `Could not generate approval cards: ${error.message}`);
+  }
+});
+
 fetch('/api/health')
   .then((response) => response.json())
   .then((data) => {
@@ -407,3 +652,5 @@ fetch('/api/health')
   .catch(() => {
     statusEl.textContent = 'API status: unavailable';
   });
+
+updateBuildButtonState();
