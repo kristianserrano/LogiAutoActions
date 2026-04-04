@@ -13,6 +13,8 @@ const { createChromeShortcutsTestRequest } = require('./src/sample-requests');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const RATE_LIMIT_WINDOW_MS = Number.parseInt(process.env.LOGI_RATE_LIMIT_WINDOW_MS || '60000', 10);
+const RATE_LIMIT_MAX_REQUESTS = Number.parseInt(process.env.LOGI_RATE_LIMIT_MAX_REQUESTS || '120', 10);
 const ICONS_ROOT = fs.existsSync(path.join(__dirname, 'assets', 'fa-icons'))
   ? path.join(__dirname, 'assets', 'fa-icons')
   : path.join(__dirname, 'assets', 'icons');
@@ -1497,6 +1499,74 @@ function runMockBuildJob(jobId, payload, options = {}) {
 }
 
 let iconCandidates = [];
+const apiRateLimitBuckets = new Map();
+
+function getClientIp(req) {
+  const forwardedFor = req.headers['x-forwarded-for'];
+  if (typeof forwardedFor === 'string' && forwardedFor.trim()) {
+    return forwardedFor.split(',')[0].trim();
+  }
+
+  return req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
+}
+
+function cleanupRateLimitBuckets(nowMs, windowMs) {
+  if (apiRateLimitBuckets.size <= 1000) {
+    return;
+  }
+
+  for (const [ip, bucket] of apiRateLimitBuckets.entries()) {
+    if (nowMs - bucket.windowStart >= windowMs * 2) {
+      apiRateLimitBuckets.delete(ip);
+    }
+  }
+}
+
+function apiRateLimit(req, res, next) {
+  if (
+    !Number.isFinite(RATE_LIMIT_WINDOW_MS) || RATE_LIMIT_WINDOW_MS <= 0
+    || !Number.isFinite(RATE_LIMIT_MAX_REQUESTS) || RATE_LIMIT_MAX_REQUESTS <= 0
+    || req.path === '/health'
+  ) {
+    next();
+    return;
+  }
+
+  const nowMs = Date.now();
+  const ip = getClientIp(req);
+  let bucket = apiRateLimitBuckets.get(ip);
+
+  if (!bucket || (nowMs - bucket.windowStart) >= RATE_LIMIT_WINDOW_MS) {
+    bucket = {
+      windowStart: nowMs,
+      count: 0
+    };
+    apiRateLimitBuckets.set(ip, bucket);
+  }
+
+  bucket.count += 1;
+
+  const resetInMs = Math.max(0, RATE_LIMIT_WINDOW_MS - (nowMs - bucket.windowStart));
+  const remaining = Math.max(0, RATE_LIMIT_MAX_REQUESTS - bucket.count);
+  res.setHeader('X-RateLimit-Limit', String(RATE_LIMIT_MAX_REQUESTS));
+  res.setHeader('X-RateLimit-Remaining', String(remaining));
+  res.setHeader('X-RateLimit-Reset', String(Math.ceil(resetInMs / 1000)));
+
+  cleanupRateLimitBuckets(nowMs, RATE_LIMIT_WINDOW_MS);
+
+  if (bucket.count > RATE_LIMIT_MAX_REQUESTS) {
+    res.setHeader('Retry-After', String(Math.max(1, Math.ceil(resetInMs / 1000))));
+    res.status(429).json({
+      ok: false,
+      code: 'RATE_LIMITED',
+      message: 'Too many requests. Please retry shortly.'
+    });
+    return;
+  }
+
+  next();
+}
+
 function refreshIconCandidates() {
   try {
     iconCandidates = scanIconCandidates(ICONS_ROOT);
@@ -1511,6 +1581,11 @@ refreshIconCandidates();
 
 app.use(express.json({ limit: '8mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/api', apiRateLimit);
+
+app.get('/health', (_req, res) => {
+  res.json({ ok: true, service: 'logi-auto-actions' });
+});
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'logi-auto-actions' });

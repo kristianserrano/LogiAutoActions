@@ -102,6 +102,29 @@ Optional (if needed):
 - Sustained 5xx error spike.
 - Sustained build timeout/error spike.
 
+## Render Free-Tier Notes
+
+- Free instances can spin down after inactivity, so first request latency can be high (cold start).
+- Public users may see an initial delay of around 30-90 seconds before the app responds.
+- Plan for a friendly UI message that explains startup delay.
+- If usage grows and cold starts become disruptive, move to the lowest paid tier.
+
+## Runtime Environment Variables
+
+Set these variables in your hosting provider to tune API limits:
+
+- `LOGI_RATE_LIMIT_MAX_REQUESTS`
+  - Max API requests per IP inside one window.
+  - Default: `120`
+- `LOGI_RATE_LIMIT_WINDOW_MS`
+  - Window length in milliseconds.
+  - Default: `60000`
+
+Suggested starting values for hobby/public preview:
+
+- `LOGI_RATE_LIMIT_MAX_REQUESTS=90`
+- `LOGI_RATE_LIMIT_WINDOW_MS=60000`
+
 ## Rollout Plan
 
 1. Prepare container image
