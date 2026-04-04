@@ -134,6 +134,11 @@ test('build-from-approval uses edited approved values in action summary', { conc
     assert.equal(terminal.result.ok, true);
     assert.equal(terminal.result.actionSummary[0].name, 'Copy Final');
     assert.deepEqual(terminal.result.actionSummary[0].keyboardShortcuts, ['Cmd+C']);
+    assert.ok(
+      Array.isArray(terminal.result.generatedFiles) &&
+      terminal.result.generatedFiles.some((filePath) => /Application\.cs$/i.test(String(filePath))),
+      'Generated source should include a ClientApplication class file.'
+    );
   } finally {
     delete process.env.LOGI_FORCE_NO_VERIFIER;
     delete process.env.LOGI_MOCK_VERIFY_RESULT;
@@ -176,6 +181,91 @@ test('build-from-approval fails in strict real-build mode when fallback would be
   } finally {
     delete process.env.LOGI_FORCE_NO_VERIFIER;
     delete process.env.LOGI_FORCE_NO_REAL_BUILD;
+    delete process.env.LOGI_MOCK_VERIFY_RESULT;
+    delete require.cache[require.resolve('../server')];
+    if (server) {
+      await stopServer();
+    }
+  }
+});
+
+test('build-from-approval exposes downloadable package when completed', { concurrency: false }, async () => {
+  process.env.LOGI_FORCE_NO_VERIFIER = '1';
+  process.env.LOGI_MOCK_VERIFY_RESULT = 'pass';
+  delete require.cache[require.resolve('../server')];
+  const { startServer, stopServer } = require('../server');
+
+  let server;
+  try {
+    server = await startServer({ port: 0, host: '127.0.0.1' });
+    const address = server.address();
+    const port = typeof address === 'object' && address ? address.port : 3000;
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    const startResponse = await fetch(`${baseUrl}/api/generator/build-from-approval`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(createApprovalPayload())
+    });
+    const startBody = await startResponse.json();
+    assert.equal(startResponse.status, 202);
+    assert.equal(startBody.ok, true);
+
+    const terminal = await pollJobUntilDone(baseUrl, startBody.jobId);
+    assert.equal(terminal.status, 'completed');
+    assert.equal(terminal.result.ok, true);
+
+    const downloadResponse = await fetch(`${baseUrl}/api/generator/mock-build/${startBody.jobId}/download`);
+    assert.equal(downloadResponse.status, 200);
+
+    const contentDisposition = String(downloadResponse.headers.get('content-disposition') || '');
+    assert.match(contentDisposition, /attachment/i);
+    assert.match(contentDisposition, /\.lplug4/i);
+
+    const bytes = await downloadResponse.arrayBuffer();
+    assert.ok(bytes.byteLength > 0);
+  } finally {
+    delete process.env.LOGI_FORCE_NO_VERIFIER;
+    delete process.env.LOGI_MOCK_VERIFY_RESULT;
+    delete require.cache[require.resolve('../server')];
+    if (server) {
+      await stopServer();
+    }
+  }
+});
+
+test('build-from-approval keeps Plugin suffix casing for camelCase projectName', { concurrency: false }, async () => {
+  process.env.LOGI_FORCE_NO_VERIFIER = '1';
+  process.env.LOGI_MOCK_VERIFY_RESULT = 'pass';
+  delete require.cache[require.resolve('../server')];
+  const { startServer, stopServer } = require('../server');
+
+  let server;
+  try {
+    server = await startServer({ port: 0, host: '127.0.0.1' });
+    const address = server.address();
+    const port = typeof address === 'object' && address ? address.port : 3000;
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    const payload = createApprovalPayload({
+      projectName: 'GoogleKeepPlugin'
+    });
+
+    const startResponse = await fetch(`${baseUrl}/api/generator/build-from-approval`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const startBody = await startResponse.json();
+    assert.equal(startResponse.status, 202);
+    assert.equal(startBody.ok, true);
+
+    const terminal = await pollJobUntilDone(baseUrl, startBody.jobId);
+    assert.equal(terminal.status, 'completed');
+    assert.equal(terminal.result.ok, true);
+    assert.match(String(terminal.result.package.filePath || ''), /GoogleKeepPlugin\.lplug4$/);
+  } finally {
+    delete process.env.LOGI_FORCE_NO_VERIFIER;
     delete process.env.LOGI_MOCK_VERIFY_RESULT;
     delete require.cache[require.resolve('../server')];
     if (server) {

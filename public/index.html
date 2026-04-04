@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Logi Plugin Builder</title>
+    <title>Logi Actions Builder</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -15,102 +15,127 @@
   <body>
     <main class="shell">
       <section class="card">
-        <p class="eyebrow">LogiAutoActions</p>
-        <h1>Action Builder</h1>
+        <p class="eyebrow">Logi Actions Builder</p>
+        <h1>Logi Actions Builder</h1>
         <p class="intro">
-          Paste a shortcuts page URL or upload a file, then review suggested icons before the app
-          generates your plugin files.
+          Build your own Logi Actions plugin in two simple steps. Import shortcuts, review what was
+          generated, then create your plugin.
         </p>
-        <div class="status" id="status">Checking API health...</div>
+        <ol class="step-track" aria-label="Workflow progress">
+          <li id="stepMarker1" class="is-active" role="button" tabindex="0" data-step="1">1. Setup</li>
+          <li id="stepMarker2" role="button" tabindex="0" data-step="2">2. Review, Approve &amp; Build</li>
+        </ol>
 
-        <div class="grid">
-          <section class="panel">
-            <h2>Step 1: Describe the Action</h2>
-            <label>
-              Action Name
-              <input id="actionName" type="text" placeholder="Toggle Mute" />
-            </label>
-            <label>
-              What this action should do
-              <textarea
-                id="actionDescription"
-                rows="3"
-                placeholder="Switch audio between muted and unmuted states"
-              ></textarea>
-            </label>
-            <label>
-              Action mode
-              <select id="actionType">
-                <option value="single">Single</option>
-                <option value="toggle" selected>Toggle</option>
-                <option value="multistate">Multistate</option>
-              </select>
-            </label>
-            <label>
-              State names (comma separated)
-              <input id="actionStates" type="text" value="Muted, Unmuted" />
-            </label>
-          </section>
+        <section class="panel" id="step2Panel">
+          <h2>Step 1: Import and Verify Shortcuts</h2>
+          <p class="step-help">
+            Import shortcuts from a URL, file, or pasted text. We will turn them into action rows for
+            you. Tip: URL import can auto-fill the plugin name and description below.
+          </p>
+          <label>
+            Shortcuts page URL
+            <input id="shortcutUrl" type="url" placeholder="https://example.com/shortcuts" />
+          </label>
 
-          <section class="panel">
-            <h2>Step 2: Add Keyboard Shortcuts</h2>
-            <label>
-              Shortcuts page URL
-              <input id="shortcutUrl" type="url" placeholder="https://example.com/shortcuts" />
-            </label>
-            <button id="extractFromUrl" class="button button-secondary" type="button">
-              Import from URL
-            </button>
+          <label>
+            Upload shortcuts file (.txt, .md, .csv)
+            <input id="shortcutFile" type="file" accept=".txt,.md,.csv,text/plain,text/markdown" />
+          </label>
 
-            <label>
-              Upload shortcuts file (.txt, .md, .csv)
-              <input id="shortcutFile" type="file" accept=".txt,.md,.csv,text/plain,text/markdown" />
-            </label>
+          <label>
+            Or paste shortcuts text
+            <textarea
+              id="shortcutText"
+              rows="6"
+              placeholder="Cut - Ctrl+X&#10;Copy - Ctrl+C&#10;Paste - Ctrl+V"
+            ></textarea>
+          </label>
+          <button id="importShortcuts" class="button" type="button">Import Shortcuts</button>
 
-            <label>
-              Or paste shortcuts text
-              <textarea
-                id="shortcutText"
-                rows="6"
-                placeholder="Play/Pause - Ctrl+Shift+P"
-              ></textarea>
-            </label>
-            <button id="extractFromText" class="button" type="button">Import from Text</button>
-          </section>
-        </div>
-
-        <section class="panel">
-          <div class="panel-header">
-            <h2>Step 3: Review Suggestions</h2>
-            <div class="actions-row">
-              <button id="runDiagnostics" class="button button-secondary" type="button">Check Local Tools</button>
-              <button id="checkReadiness" class="button button-secondary" type="button">Check Readiness</button>
-              <button id="generateApprovalCards" class="button button-secondary" type="button">Generate Approval Cards</button>
-              <button id="rankIcons" class="button" type="button">Suggest Best Icon</button>
-              <button id="runMockBuild" class="button" type="button" disabled>Run Approved Build</button>
-            </div>
-            <label class="toggle-inline">
-              <input id="requireRealBuildOnly" type="checkbox" />
-              Require real build only (no fallback binaries)
-            </label>
+          <p class="subtle">Parsed actions (one row per action):</p>
+          <p class="subtle">
+            Reference Text shows the exact phrase found in your source that each action row came from.
+          </p>
+          <div id="shortcutResults" class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Action</th>
+                  <th>Shortcut</th>
+                  <th>Reference Text</th>
+                </tr>
+              </thead>
+              <tbody id="parsedActionsBody">
+                <tr>
+                  <td colspan="3">No shortcuts extracted yet.</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-          <p class="subtle">Local toolchain diagnostics:</p>
-          <div id="diagnosticsResult" class="readiness">Click "Check Local Tools" to test dotnet and LogiPluginTool.</div>
+        </section>
 
-          <p class="subtle">Imported shortcuts:</p>
-          <pre id="shortcutResults" class="output">No shortcuts extracted yet.</pre>
+        <section class="panel" id="step1Panel">
+          <h2>Step 1 (continued): Plugin Details</h2>
+          <p class="step-help">
+            Add a clear plugin name and description so your plugin is easy to recognize.
+          </p>
+          <label>
+            Plugin Name
+            <input id="actionName" type="text" placeholder="Clipboard Tools" />
+          </label>
+          <label>
+            Description
+            <textarea
+              id="actionDescription"
+              rows="3"
+              placeholder="Common shortcuts for copy, paste, print, and indent"
+            ></textarea>
+          </label>
+          <label>
+            App Icon (required, image file)
+            <input id="appIconFile" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" />
+          </label>
+          <div id="appIconStatus" class="readiness">Upload an app icon to continue.</div>
+          <button id="goToStep3" class="button" type="button" disabled>Review, Confirm, and Build</button>
+        </section>
 
-          <p class="subtle">Generation readiness:</p>
-          <div id="readinessResult" class="readiness">Complete steps above, then click "Check Readiness".</div>
+        <section class="panel is-hidden" id="step3Panel">
+          <div class="panel-header">
+            <h2>Step 2: Review, Confirm, and Build</h2>
+          </div>
+          <p class="step-help">
+            Start by reviewing your action cards, make any changes you want, then create your plugin.
+            You can record shortcuts directly from your keyboard in each action card.
+          </p>
+          <h3 class="section-title">Action review</h3>
+          <p class="subtle">Need a different icon? Browse <a class="icon-link" href="https://fontawesome.com/search?o=r&amp;m=free" target="_blank" rel="noopener noreferrer">Font Awesome free icons</a> and paste the icon name in any card.</p>
+          <div class="llm-assist">
+            <h3 class="section-title">LLM Icon Assist</h3>
+            <p class="subtle">Copy the ready-to-use prompt, run it in your preferred LLM, then paste the JSON output here for strict validation.</p>
+            <div class="actions-row llm-actions">
+              <button id="copyLlmPrompt" class="button button-secondary" type="button">Copy Prompt</button>
+            </div>
+            <label>
+              Paste LLM JSON response
+              <textarea id="llmResponse" rows="8" placeholder='{"assignments":[{"actionId":"copy-action","icon":"copy","pack":"solid"}]}'></textarea>
+            </label>
+            <div class="actions-row llm-actions">
+              <button id="applyLlmResponse" class="button button-secondary" type="button">Validate and Apply</button>
+            </div>
+            <div id="llmAssistResult" class="readiness">LLM assist status will appear here.</div>
+          </div>
+          <div id="readinessResult" class="readiness">Readiness status will appear here.</div>
+          <div id="approvalSummary" class="approval-summary">0/0 actions ready.</div>
+          <div id="approvalResults" class="results">Your actions will appear here.</div>
 
-          <p class="subtle">Suggested icons:</p>
-          <div id="iconResults" class="results">Click "Suggest Best Icon" to see recommendations.</div>
-
-          <p class="subtle">Action class approval:</p>
-          <div id="approvalResults" class="results">Generate approval cards to review each class before build.</div>
-
-          <p class="subtle">Build status:</p>
-          <div id="buildResult" class="readiness">Approve all cards, then run "Approved Build".</div>
+          <h3 class="section-title">Plugin build status</h3>
+          <div id="buildResult" class="readiness">Plugin build updates will appear here.</div>
+          <div class="actions-row">
+            <button id="downloadPlugin" class="button button-secondary" type="button" hidden disabled>
+              Save Plugin File (.lplug4)
+            </button>
+          </div>
+          <button id="runMockBuild" class="button" type="button" disabled>Create My Plugin</button>
         </section>
       </section>
     </main>

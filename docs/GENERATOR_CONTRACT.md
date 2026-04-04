@@ -16,7 +16,7 @@ Primary references:
 1. Local AgentDocs are authoritative; online docs are secondary for ambiguity resolution.
 2. Generated plugin language is C# targeting net8.0.
 3. Packaging output target is .lplug4.
-4. Icon selection defaults to regular icons first, but allows solid when semantic score is stronger.
+4. Icon selection is user-driven (manual or LLM-assisted) and validated against local Font Awesome Free assets.
 5. Toggle shortcut pairs generate one toggle action class, not two classes.
 6. Three or more states generate a multistate action class.
 7. Install and Uninstall signatures are treated as bool-returning in generated code.
@@ -65,7 +65,7 @@ Each action item:
   - defaultValue: number or string, optional.
 - icon:
   - preferred: string, optional exact icon path hint.
-  - selected: object, optional pre-selected icon from ranking output.
+  - selected: object, optional explicit icon assignment resolved from local icon assets.
 
 ### Validation Rules
 
@@ -89,8 +89,8 @@ Each action item:
 
 ### Icon Selection
 
-- Rank candidates using configured scoring weights from /config/icon-scoring.json.
-- Store top candidates and selected icon for verification.
+- Resolve icon names/paths against local Font Awesome Free assets.
+- Validate icon assignments from manual input or LLM-assisted import before build.
 
 ### C# Generation
 
@@ -137,7 +137,7 @@ Generator response object:
 - pluginName: string
 - outputPath: string
 - generatedFiles: string array
-- selectedIcons: array of { actionId, iconPath, pack, score }
+- selectedIcons: array of { actionId, iconPath, pack }
 - warnings: string array
 - build:
   - attempted: boolean
