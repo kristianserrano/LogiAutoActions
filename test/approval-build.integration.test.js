@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const path = require('path');
 
 async function pollJobUntilDone(baseUrl, jobId) {
   const maxAttempts = 30;
@@ -39,7 +41,11 @@ function createApprovalPayload(overrides = {}) {
         shortcuts: ['Ctrl+C'],
         states: [],
         behaviorResetOnPress: false,
-        approval: 'approved'
+        approval: 'approved',
+        icon: {
+          path: 'solid/copy.svg',
+          pack: 'solid'
+        }
       }
     ],
     ...overrides
@@ -115,7 +121,11 @@ test('build-from-approval uses edited approved values in action summary', { conc
           shortcuts: ['Cmd+C'],
           states: [],
           behaviorResetOnPress: false,
-          approval: 'approved'
+          approval: 'approved',
+          icon: {
+            path: 'solid/copy.svg',
+            pack: 'solid'
+          }
         }
       ]
     });
@@ -139,6 +149,36 @@ test('build-from-approval uses edited approved values in action summary', { conc
       terminal.result.generatedFiles.some((filePath) => /Application\.cs$/i.test(String(filePath))),
       'Generated source should include a ClientApplication class file.'
     );
+    assert.ok(
+      Array.isArray(terminal.result.generatedFiles) &&
+      terminal.result.generatedFiles.some((filePath) => /actionicons\/.*\.svg$/i.test(String(filePath))),
+      'Generated package should include per-action files under actionicons.'
+    );
+    assert.ok(
+      Array.isArray(terminal.result.generatedFiles) &&
+      terminal.result.generatedFiles.some((filePath) => /actionsymbols\/.*\.svg$/i.test(String(filePath))),
+      'Generated package should include per-action files under actionsymbols.'
+    );
+    assert.ok(
+      Array.isArray(terminal.result.generatedFiles) &&
+      terminal.result.generatedFiles.some((filePath) => /actionicons\/Loupedeck\.ApprovalFlowPlugin\.Actions\.CopyFinalCommand\.svg$/i.test(String(filePath))),
+      'Generated action icon file name should match the fully qualified generated class name.'
+    );
+    assert.ok(
+      Array.isArray(terminal.result.generatedFiles) &&
+      terminal.result.generatedFiles.some((filePath) => /actionsymbols\/Loupedeck\.ApprovalFlowPlugin\.Actions\.CopyFinalCommand\.svg$/i.test(String(filePath))),
+      'Generated action symbol file name should match the fully qualified generated class name.'
+    );
+
+    const actionIconFile = terminal.result.generatedFiles.find((filePath) => {
+      return /actionicons\/Loupedeck\.ApprovalFlowPlugin\.Actions\.CopyFinalCommand\.svg$/i.test(String(filePath));
+    });
+    assert.ok(actionIconFile, 'Expected generated action icon SVG file path.');
+
+    const absoluteActionIconPath = path.resolve(__dirname, '..', terminal.result.outputPath, String(actionIconFile));
+    const generatedSvg = fs.readFileSync(absoluteActionIconPath, 'utf8');
+    assert.doesNotMatch(generatedSvg, /currentColor/i, 'Generated action SVG should not contain currentColor tokens.');
+    assert.match(generatedSvg, /#FFFFFF/i, 'Generated action SVG should contain explicit fill color for template recoloring.');
   } finally {
     delete process.env.LOGI_FORCE_NO_VERIFIER;
     delete process.env.LOGI_MOCK_VERIFY_RESULT;

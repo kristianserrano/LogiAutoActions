@@ -1,0 +1,25 @@
+using System;
+
+namespace __PLUGIN_NAMESPACE__;
+
+public class __CLASS_NAME__MultistateCommand : PluginMultistateDynamicCommand
+{
+    private readonly String[] _states = new[] { __STATE_LIST__ };
+    private readonly String[] _shortcuts = new[] { __SHORTCUT_LIST__ };
+
+    public __CLASS_NAME__MultistateCommand()
+        : base("__ACTION_NAME__", "__ACTION_DESCRIPTION__", "__ACTION_GROUP__", new[] { __STATE_LIST__ })
+    {
+    }
+
+    protected override Boolean OnWillChangeToState(String actionParameter, String state)
+    {
+        var stateIndex = Array.IndexOf(_states, state);
+        if (stateIndex >= 0 && stateIndex < _shortcuts.Length)
+        {
+            GeneratedShortcutDispatcher.TrySendShortcut(this.Plugin, _shortcuts[stateIndex]);
+        }
+
+        return true;
+    }
+}

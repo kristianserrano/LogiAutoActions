@@ -100,6 +100,17 @@
             <input id="appIconFile" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" />
           </label>
           <div id="appIconStatus" class="readiness">Upload an app icon to continue.</div>
+          <div class="default-icon-template-controls">
+            <label>
+              Default action icon background color
+              <input id="defaultIconBgColor" type="color" value="#287c67" />
+            </label>
+            <label>
+              Default action icon foreground color
+              <input id="defaultIconFgColor" type="color" value="#ffffff" />
+            </label>
+          </div>
+          <div id="defaultIconTemplateStatus" class="readiness">Default icon background is auto-picked from your app icon. Foreground defaults to black or white for contrast, and can be changed manually.</div>
           <button id="goToStep3" class="button" type="button" disabled>Review, Confirm, and Build</button>
         </section>
 
@@ -111,8 +122,6 @@
             Start by reviewing your action cards, make any changes you want, then create your plugin.
             You can record shortcuts directly from your keyboard in each action card.
           </p>
-          <h3 class="section-title">Action review</h3>
-          <p class="subtle">Need a different icon? Browse <a class="icon-link" href="https://fontawesome.com/search?o=r&amp;m=free" target="_blank" rel="noopener noreferrer">Font Awesome free icons</a> and paste the icon name in any card.</p>
           <div class="llm-assist">
             <h3 class="section-title">LLM Icon Assist</h3>
             <p class="subtle">Copy the ready-to-use prompt, run it in your preferred LLM, then paste the JSON output here for strict validation.</p>
@@ -126,11 +135,27 @@
             <div class="actions-row llm-actions">
               <button id="applyLlmResponse" class="button button-secondary" type="button">Validate and Apply</button>
             </div>
+            <h3 class="section-title">Action review</h3>
+            <p class="subtle">Need a different icon? Browse <a class="icon-link" href="https://fontawesome.com/search?o=r&amp;m=free" target="_blank" rel="noopener noreferrer">Font Awesome free icons</a> and paste the icon name in any card.</p>
             <div id="llmAssistResult" class="readiness">LLM assist status will appear here.</div>
           </div>
           <div id="readinessResult" class="readiness">Readiness status will appear here.</div>
           <div id="approvalSummary" class="approval-summary">0/0 actions ready.</div>
           <div id="approvalResults" class="results">Your actions will appear here.</div>
+
+          <div class="group-assist" id="groupAssistPanel">
+            <h3 class="section-title">Action Grouping (Last Step)</h3>
+            <p class="subtle">After shortcuts and icons are confirmed, add groups and drag actions from No Group into any group.</p>
+            <div class="group-controls">
+              <label>
+                New group name
+                <input id="newGroupName" type="text" placeholder="e.g. Manage Notes" />
+              </label>
+              <button id="addActionGroup" class="button button-secondary" type="button">Add Group</button>
+            </div>
+            <div id="groupingResult" class="readiness">Grouping updates will appear here.</div>
+            <div id="groupingBoard" class="grouping-board">Load action cards to start grouping.</div>
+          </div>
 
           <h3 class="section-title">Plugin build status</h3>
           <div id="buildResult" class="readiness">Plugin build updates will appear here.</div>
@@ -143,6 +168,84 @@
         </section>
       </section>
     </main>
+
+    <template id="parsedActionRowTemplate">
+      <tr>
+        <td class="parsed-action-name"></td>
+        <td class="parsed-action-shortcut"></td>
+        <td class="parsed-action-source"></td>
+      </tr>
+    </template>
+
+    <template id="approvalCardTemplate">
+      <article class="approval-card" data-action-id="">
+        <div class="result-row">
+          <div class="approval-title-wrap">
+            <strong class="approval-title-text"></strong>
+            <div class="approval-confidence" hidden></div>
+          </div>
+          <span class="chip approval-state-chip"></span>
+          <span class="chip approval-kind-chip"></span>
+          <span class="chip approval-group-chip"></span>
+          <span class="chip approval-pack-chip" hidden></span>
+        </div>
+        <div class="approval-grid">
+          <label>
+            Action name
+            <input class="approval-input approval-name" type="text" value="" data-action-id="" />
+          </label>
+          <label>
+            Keyboard shortcuts
+            <input class="approval-input approval-shortcuts" type="text" value="" data-action-id="" readonly />
+          </label>
+          <label>
+            <span class="label-row">
+              <span>Icon</span>
+              <span class="icon-label-preview is-empty">
+                <img class="approval-icon-preview" src="" alt="Selected icon" loading="lazy" hidden />
+              </span>
+            </span>
+            <input class="approval-input approval-icon-path" type="text" value="" data-action-id="" placeholder="e.g. circle-right" />
+          </label>
+        </div>
+        <div class="result-path">Suggested icon: <span class="suggested-icon-text"></span></div>
+        <div class="actions-row">
+          <button class="button button-secondary approval-confirm" type="button" data-action-id="">Confirm</button>
+          <button class="button button-secondary approval-clear-shortcuts" type="button" data-action-id="">Clear Shortcut</button>
+          <button class="button button-secondary approval-record" type="button" data-action-id="">Record Shortcut</button>
+          <button class="button button-secondary approval-remove" type="button" data-action-id="">Remove</button>
+        </div>
+        <div class="approval-errors" hidden></div>
+      </article>
+    </template>
+
+    <template id="groupingGridTemplate">
+      <div class="grouping-grid"></div>
+    </template>
+
+    <template id="groupColumnTemplate">
+      <section class="group-column" data-group-column="">
+        <div class="group-column-header">
+          <span class="group-column-title"></span>
+          <button class="group-remove" type="button" data-remove-group="">Remove</button>
+        </div>
+        <div class="group-dropzone" data-drop-group=""></div>
+      </section>
+    </template>
+
+    <template id="groupActionChipTemplate">
+      <span class="group-action-chip" draggable="true" data-action-id="" title="Drag to move">
+        <span class="group-action-chip-icon-wrap">
+          <img class="group-action-chip-icon" src="" alt="" hidden />
+        </span>
+        <span class="group-action-chip-name"></span>
+      </span>
+    </template>
+
+    <template id="groupDropzoneEmptyTemplate">
+      <div class="group-dropzone-empty">Drop actions here</div>
+    </template>
+
     <script src="app.js"></script>
   </body>
 </html>

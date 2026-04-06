@@ -1,6 +1,7 @@
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const { spawnSync } = require('child_process');
 const express = require('express');
 const AdmZip = require('adm-zip');
@@ -18,9 +19,11 @@ const RATE_LIMIT_MAX_REQUESTS = Number.parseInt(process.env.LOGI_RATE_LIMIT_MAX_
 const ICONS_ROOT = fs.existsSync(path.join(__dirname, 'assets', 'fa-icons'))
   ? path.join(__dirname, 'assets', 'fa-icons')
   : path.join(__dirname, 'assets', 'icons');
+const TEMPLATE_ROOT = path.join(__dirname, 'src', 'templates');
 const ARTIFACTS_ROOT = path.join(__dirname, 'artifacts');
 const PLUGIN_ICON_CACHE_ROOT = path.join(ARTIFACTS_ROOT, '_plugin-icon-cache');
 const mockBuildJobs = new Map();
+const templateCache = new Map();
 let httpServer;
 
 function escapeXml(value) {
@@ -47,16 +50,49 @@ function checkTool(binary, args = ['--version']) {
   };
 }
 
+function collectPluginApiCandidates() {
+  const candidates = [];
+  const fromEnv = String(process.env.LOGI_PLUGIN_API_PATH || '').trim();
+  if (fromEnv) {
+    candidates.push(fromEnv);
+  }
+
+  candidates.push('/Applications/Utilities/LogiPluginService.app/Contents/MonoBundle/PluginApi.dll');
+  candidates.push('C:/Program Files/Logi/LogiPluginService/PluginApi.dll');
+
+  const logiPluginsRoot = path.join(
+    os.homedir(),
+    'Library',
+    'Application Support',
+    'Logi',
+    'LogiPluginService',
+    'Plugins'
+  );
+
+  if (fs.existsSync(logiPluginsRoot)) {
+    try {
+      for (const entry of fs.readdirSync(logiPluginsRoot, { withFileTypes: true })) {
+        if (!entry.isDirectory()) {
+          continue;
+        }
+
+        candidates.push(path.join(logiPluginsRoot, entry.name, 'bin', 'PluginApi.dll'));
+      }
+    } catch (_error) {
+      // Ignore directory read errors and fall back to static candidates.
+    }
+  }
+
+  return Array.from(new Set(candidates.filter(Boolean)));
+}
+
 function getSystemDiagnostics() {
   const dotnet = checkTool('dotnet', ['--version']);
   const logiPluginTool = checkTool('LogiPluginTool', ['--help']);
   const forceNoVerifier = process.env.LOGI_FORCE_NO_VERIFIER === '1';
   const forceNoRealBuild = process.env.LOGI_FORCE_NO_REAL_BUILD === '1';
 
-  const pluginApiCandidates = [
-    '/Applications/Utilities/LogiPluginService.app/Contents/MonoBundle/PluginApi.dll',
-    'C:/Program Files/Logi/LogiPluginService/PluginApi.dll'
-  ];
+  const pluginApiCandidates = collectPluginApiCandidates();
 
   const existingPluginApi = pluginApiCandidates.find((candidate) => fs.existsSync(candidate));
 
@@ -109,31 +145,87 @@ function toPascalCase(value, fallback) {
   return toSafeIdentifier(merged, fallback);
 }
 
+function loadTemplate(templateFileName) {
+  if (templateCache.has(templateFileName)) {
+    return templateCache.get(templateFileName);
+  }
+
+  const templatePath = path.join(TEMPLATE_ROOT, templateFileName);
+  const template = fs.readFileSync(templatePath, 'utf8');
+  templateCache.set(templateFileName, template);
+  return template;
+}
+
+function renderTemplate(templateFileName, replacements) {
+  const template = loadTemplate(templateFileName);
+  return Object.entries(replacements || {}).reduce((content, [token, value]) => {
+    return content.split(token).join(String(value ?? ''));
+  }, template);
+}
+
+function escapeCSharpString(value) {
+  return String(value ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"');
+}
+
+function toCSharpStringLiteral(value) {
+  return `"${escapeCSharpString(value)}"`;
+}
+
+function toCSharpStringArrayLiteral(values, fallback = '""') {
+  const items = Array.isArray(values)
+    ? values.map((item) => toCSharpStringLiteral(String(item ?? '')))
+    : [];
+
+  if (items.length === 0) {
+    return fallback;
+  }
+
+  return items.join(', ');
+}
+
 function createActionClass(pluginName, action) {
   const className = toPascalCase(action.name || action.id, 'GeneratedAction');
   const actionName = action.name || action.id;
   const actionDescription = action.description || 'Generated action';
-  const actionGroup = action.groupPath || 'Generated';
+  const actionGroup = String(action.groupPath || '').trim();
   const shortcuts = action.behavior && Array.isArray(action.behavior.keyboardShortcuts)
     ? action.behavior.keyboardShortcuts
     : [];
-  const shortcutList = shortcuts.map((item) => `"${item}"`).join(', ');
+  const shortcutList = toCSharpStringArrayLiteral(shortcuts);
+  const namespaceName = `Loupedeck.${pluginName}.Actions`;
 
   if (action.actionKind === 'adjustment') {
     return {
       fileName: `${className}Adjustment.cs`,
       className,
-      content: `using System;\n\nnamespace Loupedeck.${pluginName}.Actions;\n\npublic class ${className}Adjustment : PluginDynamicAdjustment\n{\n    private readonly String[] _shortcuts = new[] { ${shortcutList || '""'} };\n    private Int32 _value = 100;\n\n    public ${className}Adjustment()\n        : base("${actionName}", "${actionDescription}", "${actionGroup}", hasReset: true)\n    {\n    }\n\n    protected override void ApplyAdjustment(String actionParameter, Int32 diff)\n    {\n        _value += diff;\n        this.AdjustmentValueChanged();\n        // TODO: map diff direction to _shortcuts for runtime dispatch.\n    }\n\n    protected override void RunCommand(String actionParameter)\n    {\n        _value = 100;\n        this.AdjustmentValueChanged();\n    }\n\n    protected override String GetAdjustmentValue(String actionParameter)\n        => $"{_value}%";\n}\n`
+      content: renderTemplate('GeneratedActionAdjustment.cs.tmpl', {
+        '__PLUGIN_NAMESPACE__': namespaceName,
+        '__CLASS_NAME__': className,
+        '__ACTION_NAME__': escapeCSharpString(actionName),
+        '__ACTION_DESCRIPTION__': escapeCSharpString(actionDescription),
+        '__ACTION_GROUP__': escapeCSharpString(actionGroup),
+        '__SHORTCUT_LIST__': shortcutList
+      })
     };
   }
 
   if (action.actionKind === 'multistate') {
     const states = action.intent && Array.isArray(action.intent.states) ? action.intent.states : ['StateA', 'StateB', 'StateC'];
-    const stateList = states.map((state) => `\"${state}\"`).join(', ');
+    const stateList = toCSharpStringArrayLiteral(states);
     return {
       fileName: `${className}MultistateCommand.cs`,
       className,
-      content: `using System;\n\nnamespace Loupedeck.${pluginName}.Actions;\n\npublic class ${className}MultistateCommand : PluginMultistateDynamicCommand\n{\n    private readonly String[] _shortcuts = new[] { ${shortcutList || '""'} };\n\n    public ${className}MultistateCommand()\n        : base("${actionName}", "${actionDescription}", "${actionGroup}", new[] { ${stateList} })\n    {\n    }\n}\n`
+      content: renderTemplate('GeneratedActionMultistate.cs.tmpl', {
+        '__PLUGIN_NAMESPACE__': namespaceName,
+        '__CLASS_NAME__': className,
+        '__ACTION_NAME__': escapeCSharpString(actionName),
+        '__ACTION_DESCRIPTION__': escapeCSharpString(actionDescription),
+        '__ACTION_GROUP__': escapeCSharpString(actionGroup),
+        '__STATE_LIST__': stateList,
+        '__SHORTCUT_LIST__': shortcutList
+      })
     };
   }
 
@@ -144,14 +236,42 @@ function createActionClass(pluginName, action) {
     return {
       fileName: `${className}ToggleCommand.cs`,
       className,
-      content: `using System;\n\nnamespace Loupedeck.${pluginName}.Actions;\n\npublic class ${className}ToggleCommand : PluginDynamicCommand\n{\n    private readonly String[] _shortcuts = new[] { ${shortcutList || '""'} };\n    private Boolean _isSecondState;\n\n    public ${className}ToggleCommand()\n        : base("${actionName}", "${actionDescription}", "${actionGroup}")\n    {\n    }\n\n    protected override void RunCommand(String actionParameter)\n    {\n        _isSecondState = !_isSecondState;\n        // TODO: trigger _shortcuts[_isSecondState ? 1 : 0] through runtime command bridge.\n        this.ActionImageChanged();\n    }\n\n    protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)\n        => _isSecondState ? "${stateB}" : "${stateA}";\n}\n`
+      content: renderTemplate('GeneratedActionToggle.cs.tmpl', {
+        '__PLUGIN_NAMESPACE__': namespaceName,
+        '__CLASS_NAME__': className,
+        '__ACTION_NAME__': escapeCSharpString(actionName),
+        '__ACTION_DESCRIPTION__': escapeCSharpString(actionDescription),
+        '__ACTION_GROUP__': escapeCSharpString(actionGroup),
+        '__SHORTCUT_LIST__': shortcutList,
+        '__STATE_A__': escapeCSharpString(stateA),
+        '__STATE_B__': escapeCSharpString(stateB)
+      })
     };
   }
 
   return {
     fileName: `${className}Command.cs`,
     className,
-    content: `using System;\n\nnamespace Loupedeck.${pluginName}.Actions;\n\npublic class ${className}Command : PluginDynamicCommand\n{\n    private readonly String[] _shortcuts = new[] { ${shortcutList || '""'} };\n\n    public ${className}Command()\n        : base("${actionName}", "${actionDescription}", "${actionGroup}")\n    {\n    }\n\n    protected override void RunCommand(String actionParameter)\n    {\n        // TODO: trigger _shortcuts[0] through runtime command bridge.\n    }\n}\n`
+    content: renderTemplate('GeneratedActionCommand.cs.tmpl', {
+      '__PLUGIN_NAMESPACE__': namespaceName,
+      '__CLASS_NAME__': className,
+      '__ACTION_NAME__': escapeCSharpString(actionName),
+      '__ACTION_DESCRIPTION__': escapeCSharpString(actionDescription),
+      '__ACTION_GROUP__': escapeCSharpString(actionGroup),
+      '__SHORTCUT_LIST__': shortcutList
+    })
+  };
+}
+
+function createShortcutDispatcherClass(pluginName) {
+  const namespaceName = `Loupedeck.${pluginName}.Actions`;
+
+  return {
+    fileName: 'GeneratedShortcutDispatcher.cs',
+    className: 'GeneratedShortcutDispatcher',
+    content: renderTemplate('GeneratedShortcutDispatcher.cs.tmpl', {
+      '__PLUGIN_NAMESPACE__': namespaceName
+    })
   };
 }
 
@@ -257,7 +377,7 @@ function buildDraftActions(payload) {
         id: toSafeIdentifier(toPascalCase(actionName, 'ToggleAction').toLowerCase(), 'toggle_action'),
         name: actionName,
         description: actionDescription,
-        groupPath: 'Generated',
+        groupPath: '',
         actionKind: 'toggle',
         intent: {
           states: states.length === 2 ? states : ['Off', 'On'],
@@ -282,7 +402,7 @@ function buildDraftActions(payload) {
         id: toSafeIdentifier(toPascalCase(actionName, 'MultistateAction').toLowerCase(), 'multistate_action'),
         name: actionName,
         description: actionDescription,
-        groupPath: 'Generated',
+        groupPath: '',
         actionKind: 'multistate',
         intent: {
           states: generatedStates,
@@ -305,7 +425,7 @@ function buildDraftActions(payload) {
         id: toSafeIdentifier(idBase, `generated_action_${index + 1}`),
         name: inferredName,
         description: `Runs ${entry.shortcut}`,
-        groupPath: 'Generated',
+        groupPath: '',
         actionKind: 'command',
         intent: {
           sourceShortcuts: [entry.shortcut],
@@ -325,7 +445,7 @@ function buildDraftActions(payload) {
       id: toSafeIdentifier(toPascalCase(actionName, 'GeneratedAction').toLowerCase(), 'generated_action'),
       name: actionName,
       description: actionDescription,
-      groupPath: 'Generated',
+      groupPath: '',
       actionKind: actionType === 'single' ? 'command' : actionType,
       intent: {
         states,
@@ -580,6 +700,105 @@ function decodeImageDataUrl(value) {
   };
 }
 
+function normalizeHexColor(value, fallback = '#287c67') {
+  const raw = String(value || '').trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(raw)) {
+    return raw.toLowerCase();
+  }
+  return fallback;
+}
+
+function hexToRgb(hexColor) {
+  const normalized = normalizeHexColor(hexColor, '#287c67').slice(1);
+  return {
+    r: Number.parseInt(normalized.slice(0, 2), 16),
+    g: Number.parseInt(normalized.slice(2, 4), 16),
+    b: Number.parseInt(normalized.slice(4, 6), 16)
+  };
+}
+
+function srgbToLinear(channel) {
+  const value = channel / 255;
+  return value <= 0.04045
+    ? value / 12.92
+    : ((value + 0.055) / 1.055) ** 2.4;
+}
+
+function relativeLuminance(rgb) {
+  return (
+    0.2126 * srgbToLinear(rgb.r)
+    + 0.7152 * srgbToLinear(rgb.g)
+    + 0.0722 * srgbToLinear(rgb.b)
+  );
+}
+
+function pickContrastingTextColor(backgroundHex) {
+  const luminance = relativeLuminance(hexToRgb(backgroundHex));
+  const contrastWithWhite = 1.05 / (luminance + 0.05);
+  const contrastWithBlack = (luminance + 0.05) / 0.05;
+  return contrastWithWhite >= contrastWithBlack ? '#ffffff' : '#000000';
+}
+
+function hexToArgbUint(hexColor) {
+  const rgb = hexToRgb(hexColor);
+  return ((255 << 24) | (rgb.r << 16) | (rgb.g << 8) | rgb.b) >>> 0;
+}
+
+function resolveDefaultIconTemplateColors(defaultIconTemplate) {
+  const backgroundColorHex = normalizeHexColor(
+    defaultIconTemplate && defaultIconTemplate.backgroundColorHex,
+    '#287c67'
+  );
+  const foregroundColorHex = normalizeHexColor(
+    defaultIconTemplate && defaultIconTemplate.foregroundColorHex,
+    pickContrastingTextColor(backgroundColorHex)
+  );
+
+  return {
+    backgroundColorHex,
+    foregroundColorHex,
+    backgroundColorInt: hexToArgbUint(backgroundColorHex),
+    foregroundColorInt: hexToArgbUint(foregroundColorHex)
+  };
+}
+
+function normalizeSvgForTemplateColoring(svgContent) {
+  let normalized = String(svgContent || '');
+  if (!normalized.trim()) {
+    return normalized;
+  }
+
+  // Keep color authority in DefaultIconTemplate.ict; this only removes dynamic
+  // tokens so the packaged SVG can be recolored by the template engine.
+  // Replace CSS-style dynamic color tokens with concrete color values.
+  normalized = normalized.replace(/currentColor/gi, '#FFFFFF');
+
+  // Ensure the root SVG has a concrete default fill for paths that inherit fill.
+  normalized = normalized.replace(/<svg\b([^>]*)>/i, (fullMatch, attrs = '') => {
+    if (/\sfill\s*=\s*['"][^'"]*['"]/i.test(attrs)) {
+      return fullMatch;
+    }
+
+    return `<svg${attrs} fill="#FFFFFF">`;
+  });
+
+  return normalized;
+}
+
+function readActionIconBufferForPackaging(absoluteIconPath) {
+  const iconBuffer = fs.readFileSync(absoluteIconPath);
+  if (path.extname(absoluteIconPath).toLowerCase() !== '.svg') {
+    return iconBuffer;
+  }
+
+  try {
+    const normalizedSvg = normalizeSvgForTemplateColoring(iconBuffer.toString('utf8'));
+    return Buffer.from(normalizedSvg, 'utf8');
+  } catch (_error) {
+    return iconBuffer;
+  }
+}
+
 function cleanUrlToken(value) {
   return String(value || '')
     .trim()
@@ -819,7 +1038,6 @@ function buildLlmPromptExport(approvalActions) {
   });
 
   const responseTemplate = {
-    pluginIconUrl: '',
     assignments: actions.map((action) => ({
       actionId: action.actionId,
       icon: '',
@@ -828,41 +1046,10 @@ function buildLlmPromptExport(approvalActions) {
     }))
   };
 
-  const promptMarkdown = [
-    '# Task',
-    'Pick one Font Awesome Free icon for every action below.',
-    '',
-    '# Rules',
-    '- Output valid JSON only (no prose).',
-    '- Use every actionId exactly once.',
-    '- Return exactly one icon per action.',
-    '- pluginIconUrl is optional because plugin icon is provided in Step 1 by user upload.',
-    '- If pluginIconUrl is provided, it must be a direct https URL to the official app icon as a transparent PNG.',
-    '- Do not use markdown link syntax, search-result links, redirect links, SVG files, or icon-library assets for pluginIconUrl.',
-    '- Use icon names from Font Awesome Free (for example: copy, paste, arrow-right).',
-    '- Do not reuse the same icon family across different command groups.',
-    '- Keep distinct icon families for groups like move note, navigate notes, move list item, and navigate list item.',
-    '- Keep opposite navigation actions visually opposite (next vs previous, forward vs back).',
-    '',
-    '# JSON Schema',
-    '{',
-    '  "pluginIconUrl": "https://example.com/icon.png",',
-    '  "assignments": [',
-    '    {',
-    '      "actionId": "exact-action-id",',
-    '      "icon": "font-awesome-icon-name-or-path",',
-    '      "pack": "solid|regular|brands",',
-    '      "reason": "short reason"',
-    '    }',
-    '  ]',
-    '}',
-    '',
-    '# Actions',
-    JSON.stringify(actions, null, 2),
-    '',
-    '# Return Only This JSON Shape',
-    JSON.stringify(responseTemplate, null, 2)
-  ].join('\n');
+  const promptMarkdown = renderTemplate('GeneratedLlmIconAssistPrompt.md.tmpl', {
+    '__ACTIONS_JSON__': JSON.stringify(actions, null, 2),
+    '__RESPONSE_TEMPLATE_JSON__': JSON.stringify(responseTemplate, null, 2)
+  });
 
   return {
     actions,
@@ -878,14 +1065,12 @@ async function validateLlmIconAssignments(approvalActions, llmResponse) {
       ok: false,
       errors: [{ message: parsedResult.error }],
       warnings: [],
-      resolvedAssignments: [],
-      pluginIcon: null
+      resolvedAssignments: []
     };
   }
 
   const payload = parsedResult.parsed || {};
   const assignments = Array.isArray(payload.assignments) ? payload.assignments : [];
-  const pluginIconUrl = String(payload.pluginIconUrl || '').trim();
   const errors = [];
   const warnings = [];
 
@@ -894,8 +1079,7 @@ async function validateLlmIconAssignments(approvalActions, llmResponse) {
       ok: false,
       errors: [{ message: 'JSON must contain a non-empty assignments array.' }],
       warnings,
-      resolvedAssignments: [],
-      pluginIcon: null
+      resolvedAssignments: []
     };
   }
 
@@ -982,23 +1166,11 @@ async function validateLlmIconAssignments(approvalActions, llmResponse) {
     }
   }
 
-  let pluginIcon = null;
-  if (errors.length === 0 && pluginIconUrl) {
-    try {
-      pluginIcon = await preparePluginIconAsset(pluginIconUrl);
-    } catch (error) {
-      errors.push({
-        message: `Could not prepare plugin icon from pluginIconUrl: ${error.message}`
-      });
-    }
-  }
-
   return {
     ok: errors.length === 0,
     errors,
     warnings,
-    resolvedAssignments,
-    pluginIcon
+    resolvedAssignments
   };
 }
 
@@ -1020,6 +1192,8 @@ function validateApprovalAction(action, index) {
   const actionKind = String(action.actionKind || 'command').trim();
   const shortcuts = normalizeApprovalShortcuts(action.shortcuts);
   const states = normalizeApprovalStates(action.states);
+  const iconPath = String((action.icon && (action.icon.path || (action.icon.selected && action.icon.selected.path))) || '').trim();
+  const iconPack = String((action.icon && (action.icon.pack || (action.icon.selected && action.icon.selected.pack))) || '').trim();
 
   if (!name) {
     errors.push({ field: 'name', message: 'Action name is required.' });
@@ -1059,9 +1233,17 @@ function validateApprovalAction(action, index) {
       shortcuts,
       states,
       description: String(action.description || '').trim() || 'Generated action',
-      groupPath: String(action.groupPath || 'Generated').trim() || 'Generated',
+      groupPath: String(action.groupPath || '').trim(),
       resetOnPress: Boolean(action.behaviorResetOnPress),
-      approval: action.approval || 'pending'
+      approval: action.approval || 'pending',
+      icon: iconPath
+        ? {
+          selected: {
+            path: iconPath,
+            pack: iconPack || 'solid'
+          }
+        }
+        : null
     }
   };
 }
@@ -1085,7 +1267,15 @@ function approvalActionToGeneratorAction(item) {
     behavior: {
       keyboardShortcuts: item.shortcuts,
       resetOnPress: item.resetOnPress
-    }
+    },
+    icon: item.icon && item.icon.selected && item.icon.selected.path
+      ? {
+        selected: {
+          path: item.icon.selected.path,
+          pack: item.icon.selected.pack || 'solid'
+        }
+      }
+      : undefined
   };
 }
 
@@ -1110,6 +1300,11 @@ function buildGeneratorPayloadFromApproval(payload) {
 
   const approved = validated.map((item) => item.normalized);
   const pluginIconAssetPath = String(payload.pluginIconAssetPath || '').trim();
+  const resolvedDefaultIconTemplate = resolveDefaultIconTemplateColors(payload.defaultIconTemplate || {});
+  const defaultIconTemplate = {
+    backgroundColorHex: resolvedDefaultIconTemplate.backgroundColorHex,
+    foregroundColorHex: resolvedDefaultIconTemplate.foregroundColorHex
+  };
 
   if (pluginIconAssetPath) {
     const absolutePath = path.resolve(__dirname, pluginIconAssetPath);
@@ -1139,7 +1334,8 @@ function buildGeneratorPayloadFromApproval(payload) {
       supportedDevices: Array.isArray(payload.supportedDevices) && payload.supportedDevices.length > 0
         ? payload.supportedDevices
         : ['LoupedeckCtFamily'],
-      actions: approved.map((item) => approvalActionToGeneratorAction(item))
+      actions: approved.map((item) => approvalActionToGeneratorAction(item)),
+      defaultIconTemplate
     },
     approvedActions: approved,
     pluginIconAssetPath
@@ -1181,7 +1377,10 @@ function writePluginArtifacts(payload) {
   const artifactRoot = path.join(ARTIFACTS_ROOT, pluginName);
   const srcRoot = path.join(artifactRoot, 'src');
   const actionsRoot = path.join(srcRoot, 'Actions');
-  const metadataRoot = path.join(srcRoot, 'package', 'metadata');
+  const packageRoot = path.join(srcRoot, 'package');
+  const metadataRoot = path.join(packageRoot, 'metadata');
+  const actionIconsRoot = path.join(packageRoot, 'actionicons');
+  const actionSymbolsRoot = path.join(packageRoot, 'actionsymbols');
   const compiledRoot = path.join(artifactRoot, 'compiled');
   const diagnostics = getSystemDiagnostics();
 
@@ -1231,7 +1430,10 @@ function writePluginArtifacts(payload) {
     const pluginClassPath = path.join(srcRoot, `${pluginName}.cs`);
     fs.writeFileSync(
       pluginClassPath,
-      `using System;\n\nnamespace Loupedeck.${pluginName};\n\npublic class ${pluginName} : Plugin\n{\n    public override Boolean UsesApplicationApiOnly => true;\n    public override Boolean HasNoApplication => true;\n\n    public override void Load()\n    {\n    }\n\n    public override void Unload()\n    {\n    }\n\n    public override Boolean Install() => true;\n    public override Boolean Uninstall() => true;\n}\n`,
+      renderTemplate('GeneratedPluginClass.cs.tmpl', {
+        '__PLUGIN_NAMESPACE__': `Loupedeck.${pluginName}`,
+        '__PLUGIN_CLASS__': pluginName
+      }),
       'utf8'
     );
     addGeneratedFile(pluginClassPath);
@@ -1239,18 +1441,27 @@ function writePluginArtifacts(payload) {
     const applicationClassPath = path.join(srcRoot, `${packageName}Application.cs`);
     fs.writeFileSync(
       applicationClassPath,
-      `using System;\n\nnamespace Loupedeck.${pluginName};\n\npublic class ${packageName}Application : ClientApplication\n{\n    protected override String GetProcessName() => \"\";\n\n    protected override String GetBundleName() => \"\";\n\n    public override ClientApplicationStatus GetApplicationStatus() => ClientApplicationStatus.Unknown;\n}\n`,
+      renderTemplate('GeneratedApplicationClass.cs.tmpl', {
+        '__PLUGIN_NAMESPACE__': `Loupedeck.${pluginName}`,
+        '__APPLICATION_CLASS__': `${packageName}Application`
+      }),
       'utf8'
     );
     addGeneratedFile(applicationClassPath);
 
     const csprojPath = path.join(srcRoot, `${pluginName}.csproj`);
     const pluginApiReference = diagnostics.pluginApi.available
-      ? `\n  <ItemGroup>\n    <Reference Include=\"PluginApi\">\n      <HintPath>${escapeXml(diagnostics.pluginApi.path)}</HintPath>\n    </Reference>\n  </ItemGroup>`
+      ? renderTemplate('GeneratedPluginApiReference.xml.tmpl', {
+        '__PLUGIN_API_HINT_PATH__': escapeXml(diagnostics.pluginApi.path)
+      })
       : '';
     fs.writeFileSync(
       csprojPath,
-      `<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <TargetFramework>net8.0</TargetFramework>\n    <ImplicitUsings>enable</ImplicitUsings>\n    <Nullable>disable</Nullable>\n    <RootNamespace>Loupedeck.${pluginName}</RootNamespace>\n    <AssemblyName>${assemblyName}</AssemblyName>\n  </PropertyGroup>${pluginApiReference}\n</Project>\n`,
+      renderTemplate('GeneratedPluginCsproj.csproj.tmpl', {
+        '__ROOT_NAMESPACE__': `Loupedeck.${pluginName}`,
+        '__ASSEMBLY_NAME__': assemblyName,
+        '__PLUGIN_API_REFERENCE__': pluginApiReference
+      }),
       'utf8'
     );
     addGeneratedFile(csprojPath);
@@ -1258,7 +1469,9 @@ function writePluginArtifacts(payload) {
     const solutionPath = path.join(artifactRoot, `${pluginName}.sln`);
     fs.writeFileSync(
       solutionPath,
-      `Microsoft Visual Studio Solution File, Format Version 12.00\n# Mock solution generated by LogiAutoActions\n`,
+      renderTemplate('GeneratedPluginSolution.sln.tmpl', {
+        '__SOLUTION_COMMENT__': 'Mock solution generated by LogiAutoActions'
+      }),
       'utf8'
     );
     addGeneratedFile(solutionPath);
@@ -1266,23 +1479,85 @@ function writePluginArtifacts(payload) {
 
   fs.mkdirSync(actionsRoot, { recursive: true });
   fs.mkdirSync(metadataRoot, { recursive: true });
+  fs.mkdirSync(actionIconsRoot, { recursive: true });
+  fs.mkdirSync(actionSymbolsRoot, { recursive: true });
 
   fs.rmSync(actionsRoot, { recursive: true, force: true });
   fs.mkdirSync(actionsRoot, { recursive: true });
+  fs.rmSync(actionIconsRoot, { recursive: true, force: true });
+  fs.mkdirSync(actionIconsRoot, { recursive: true });
+  fs.rmSync(actionSymbolsRoot, { recursive: true, force: true });
+  fs.mkdirSync(actionSymbolsRoot, { recursive: true });
+
+  const shortcutDispatcherFile = createShortcutDispatcherClass(pluginName);
+  const shortcutDispatcherPath = path.join(actionsRoot, shortcutDispatcherFile.fileName);
+  fs.writeFileSync(shortcutDispatcherPath, shortcutDispatcherFile.content, 'utf8');
+  addGeneratedFile(shortcutDispatcherPath);
 
   const csprojPath = path.join(srcRoot, `${pluginName}.csproj`);
+  const generatedActionClasses = [];
 
   for (const action of payload.actions || []) {
     const classFile = createActionClass(pluginName, action);
+    const generatedTypeName = path.basename(classFile.fileName, '.cs');
     const classPath = path.join(actionsRoot, classFile.fileName);
     fs.writeFileSync(classPath, classFile.content, 'utf8');
     addGeneratedFile(classPath);
+    generatedActionClasses.push({ action, classFile, generatedTypeName });
+  }
+
+  for (const item of generatedActionClasses) {
+    const iconSourceRelativePath = String(
+      (item.action && item.action.icon && item.action.icon.selected && item.action.icon.selected.path)
+      || ''
+    ).trim();
+
+    if (!iconSourceRelativePath) {
+      continue;
+    }
+
+    const normalizedIconPath = path.normalize(iconSourceRelativePath).replace(/^([/\\])+/, '');
+    const absoluteIconPath = path.resolve(ICONS_ROOT, normalizedIconPath);
+    const iconRoot = path.resolve(ICONS_ROOT) + path.sep;
+    if (!absoluteIconPath.startsWith(iconRoot) || !fs.existsSync(absoluteIconPath)) {
+      warnings.push(`Action icon source not found for ${item.action.id}: ${iconSourceRelativePath}`);
+      continue;
+    }
+
+    const iconBuffer = readActionIconBufferForPackaging(absoluteIconPath);
+    const fullClassName = `Loupedeck.${pluginName}.Actions.${item.generatedTypeName}`;
+    const iconFileNames = [`${fullClassName}.svg`];
+
+    for (const iconFileName of iconFileNames) {
+      const symbolTargetPath = path.join(actionSymbolsRoot, iconFileName);
+      const iconTargetPath = path.join(actionIconsRoot, iconFileName);
+      fs.writeFileSync(symbolTargetPath, iconBuffer);
+      fs.writeFileSync(iconTargetPath, iconBuffer);
+      addGeneratedFile(symbolTargetPath);
+      addGeneratedFile(iconTargetPath);
+    }
   }
 
   const packageYamlPath = path.join(metadataRoot, 'LoupedeckPackage.yaml');
+  const yamlDescription = String(payload.description || 'Generated plugin from LogiAutoActions.')
+    .replace(/\r?\n/g, ' ')
+    .replace(/"/g, '\\"');
+  const firstSupportedDevice = Array.isArray(payload.supportedDevices) && payload.supportedDevices.length
+    ? payload.supportedDevices[0]
+    : 'LoupedeckCtFamily';
   fs.writeFileSync(
     packageYamlPath,
-    `name: ${packageName}\npluginName: ${packageName}\ndisplayName: \"${payload.displayName || pluginName}\"\nversion: ${payload.version || '1.0.0'}\nauthor: \"${payload.author || 'LogiAutoActions'}\"\nlicense: ${payload.license || 'MIT'}\npluginFileName: ${pluginBinaryName}\nsupportedDevices:\n  - ${Array.isArray(payload.supportedDevices) && payload.supportedDevices.length ? payload.supportedDevices[0] : 'LoupedeckCtFamily'}\nminimumLoupedeckVersion: ${payload.minimumLoupedeckVersion || '6.0'}\npluginFolderWin: win/bin\npluginFolderMac: mac/bin\n`,
+    renderTemplate('GeneratedLoupedeckPackage.yaml.tmpl', {
+      '__PACKAGE_NAME__': packageName,
+      '__DISPLAY_NAME__': payload.displayName || pluginName,
+      '__DESCRIPTION__': yamlDescription,
+      '__VERSION__': payload.version || '1.0.0',
+      '__AUTHOR__': payload.author || 'LogiAutoActions',
+      '__LICENSE__': payload.license || 'MIT',
+      '__PLUGIN_FILE_NAME__': pluginBinaryName,
+      '__SUPPORTED_DEVICE__': firstSupportedDevice,
+      '__MIN_LOUPEDECK_VERSION__': payload.minimumLoupedeckVersion || '6.0'
+    }),
     'utf8'
   );
   addGeneratedFile(packageYamlPath);
@@ -1305,6 +1580,18 @@ function writePluginArtifacts(payload) {
   }
   addGeneratedFile(iconPath);
 
+  const defaultIconTemplatePath = path.join(metadataRoot, 'DefaultIconTemplate.ict');
+  const defaultIconTemplate = resolveDefaultIconTemplateColors(payload.defaultIconTemplate || {});
+  fs.writeFileSync(
+    defaultIconTemplatePath,
+    renderTemplate('GeneratedDefaultIconTemplate.ict.tmpl', {
+      '__BACKGROUND_COLOR_INT__': defaultIconTemplate.backgroundColorInt,
+      '__FOREGROUND_COLOR_INT__': defaultIconTemplate.foregroundColorInt
+    }),
+    'utf8'
+  );
+  addGeneratedFile(defaultIconTemplatePath);
+
   let realBuildUsed = false;
   const compiledDllPath = path.join(compiledRoot, pluginBinaryName);
 
@@ -1321,7 +1608,17 @@ function writePluginArtifacts(payload) {
       warnings.push('Real build attempt failed. Falling back to placeholder binaries.');
       const buildOutput = `${buildResult.stdout || ''}${buildResult.stderr || ''}`.trim();
       if (buildOutput) {
-        warnings.push(buildOutput.split('\n').slice(0, 2).join(' | '));
+        const buildLines = buildOutput
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean);
+        const errorLines = buildLines.filter((line) => /:\s*error\s+/i.test(line) || /error\s+CS\d+/i.test(line));
+
+        if (errorLines.length > 0) {
+          warnings.push(errorLines.slice(0, 3).join(' | '));
+        } else {
+          warnings.push(buildLines.slice(0, 3).join(' | '));
+        }
       }
     }
   } else {
@@ -1332,14 +1629,29 @@ function writePluginArtifacts(payload) {
   const zip = new AdmZip();
   zip.addFile('metadata/LoupedeckPackage.yaml', Buffer.from(fs.readFileSync(packageYamlPath)));
   zip.addFile('metadata/Icon256x256.png', Buffer.from(fs.readFileSync(iconPath)));
+  zip.addFile('metadata/DefaultIconTemplate.ict', Buffer.from(fs.readFileSync(defaultIconTemplatePath)));
+
+  for (const symbolFile of fs.readdirSync(actionSymbolsRoot)) {
+    const symbolPath = path.join(actionSymbolsRoot, symbolFile);
+    if (fs.statSync(symbolPath).isFile()) {
+      zip.addFile(`actionsymbols/${symbolFile}`, Buffer.from(fs.readFileSync(symbolPath)));
+    }
+  }
+
+  for (const actionIconFile of fs.readdirSync(actionIconsRoot)) {
+    const actionIconPath = path.join(actionIconsRoot, actionIconFile);
+    if (fs.statSync(actionIconPath).isFile()) {
+      zip.addFile(`actionicons/${actionIconFile}`, Buffer.from(fs.readFileSync(actionIconPath)));
+    }
+  }
 
   if (realBuildUsed) {
     const dllBuffer = Buffer.from(fs.readFileSync(compiledDllPath));
-    zip.addFile(`win/bin/${pluginBinaryName}`, dllBuffer);
-    zip.addFile(`mac/bin/${pluginBinaryName}`, dllBuffer);
+    zip.addFile(`win/${pluginBinaryName}`, dllBuffer);
+    zip.addFile(`mac/${pluginBinaryName}`, dllBuffer);
   } else {
-    zip.addFile(`win/bin/${pluginBinaryName}`, Buffer.from('Mock Windows plugin binary placeholder', 'utf8'));
-    zip.addFile(`mac/bin/${pluginBinaryName}`, Buffer.from('Mock macOS plugin binary placeholder', 'utf8'));
+    zip.addFile(`win/${pluginBinaryName}`, Buffer.from('Mock Windows plugin binary placeholder', 'utf8'));
+    zip.addFile(`mac/${pluginBinaryName}`, Buffer.from('Mock macOS plugin binary placeholder', 'utf8'));
   }
   zip.writeZip(packagePath);
 
@@ -1359,6 +1671,18 @@ function buildMockBuildResult(payload, options = {}) {
   const strictRealBuild = Boolean(options.strictRealBuild);
 
   if (strictRealBuild && !artifacts.realBuildUsed) {
+    const missingPrerequisites = [];
+    if (!(artifacts.diagnostics && artifacts.diagnostics.dotnet && artifacts.diagnostics.dotnet.available)) {
+      missingPrerequisites.push('dotnet SDK');
+    }
+    if (!(artifacts.diagnostics && artifacts.diagnostics.pluginApi && artifacts.diagnostics.pluginApi.available)) {
+      missingPrerequisites.push('PluginApi.dll');
+    }
+
+    const strictBuildMessage = missingPrerequisites.length
+      ? `Real build mode is required. Missing prerequisites: ${missingPrerequisites.join(', ')}.`
+      : 'Real build mode is required, but compilation failed. Check build details and diagnostics.';
+
     return {
       ok: false,
       pluginName: artifacts.pluginName,
@@ -1369,7 +1693,7 @@ function buildMockBuildResult(payload, options = {}) {
       error: {
         code: 'REAL_BUILD_REQUIRED',
         stage: 'build',
-        message: 'Real build mode is required but prerequisites were not met or compilation failed.',
+        message: strictBuildMessage,
         details: artifacts.warnings
       },
       build: {
@@ -1692,6 +2016,14 @@ app.post('/api/plugin-icon/prepare-upload', async (req, res) => {
       .png()
       .toBuffer();
 
+    const colorStats = await sharp(outputBuffer).ensureAlpha().stats();
+    const dominant = colorStats && colorStats.dominant
+      ? colorStats.dominant
+      : { r: 40, g: 124, b: 103 };
+    const dominantColorHex = `#${[dominant.r, dominant.g, dominant.b]
+      .map((value) => Number(value || 0).toString(16).padStart(2, '0'))
+      .join('')}`;
+
     fs.mkdirSync(PLUGIN_ICON_CACHE_ROOT, { recursive: true });
     const hash = crypto
       .createHash('sha256')
@@ -1707,6 +2039,7 @@ app.post('/api/plugin-icon/prepare-upload', async (req, res) => {
       pluginIcon: {
         sourceUrl: fileName || 'uploaded-file',
         assetPath: path.relative(__dirname, outputPath).split(path.sep).join('/'),
+        dominantColorHex,
         width: 256,
         height: 256
       }
@@ -1776,8 +2109,7 @@ app.post('/api/icons/llm/validate-import', async (req, res) => {
       ok: false,
       errors: result.errors,
       warnings: result.warnings,
-      resolvedAssignments: result.resolvedAssignments,
-      pluginIcon: result.pluginIcon
+      resolvedAssignments: result.resolvedAssignments
     });
     return;
   }
@@ -1785,8 +2117,7 @@ app.post('/api/icons/llm/validate-import', async (req, res) => {
   res.json({
     ok: true,
     warnings: result.warnings,
-    resolvedAssignments: result.resolvedAssignments,
-    pluginIcon: result.pluginIcon
+    resolvedAssignments: result.resolvedAssignments
   });
 });
 

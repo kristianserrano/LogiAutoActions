@@ -109,6 +109,41 @@ Optional (if needed):
 - Plan for a friendly UI message that explains startup delay.
 - If usage grows and cold starts become disruptive, move to the lowest paid tier.
 
+## Cost-Sensitive Hosting Decision Guide
+
+If the primary blocker is monthly cost for a hobby project, use this decision flow:
+
+1. Lowest ongoing cost, okay with occasional cold starts
+
+- Start with a free tier provider and accept wake-up latency.
+- Good for internal testing, early demos, and very low traffic.
+
+1. Predictable low monthly cost for public usage
+
+- Move to the smallest paid container tier once free-tier cold starts become a UX problem.
+- Treat this as the default path for a public beta.
+
+1. Lowest possible infra spend with more setup effort
+
+- Use a single low-cost VPS and deploy one Docker container manually.
+- This usually costs less than managed platforms but requires basic server maintenance.
+
+Practical recommendation for this project right now:
+
+- Keep managed hosting as the initial path (simpler operations).
+- Use strict resource limits and a single instance.
+- Re-evaluate only after real traffic data shows sustained usage.
+
+Cost controls to enable immediately:
+
+- Enforce low request body limits.
+- Keep build timeout conservative.
+- Cap concurrent builds to 1 in v1.
+- Auto-delete temp workspaces after every request.
+- Turn off verbose logs in production.
+
+These controls reduce compute spikes and help keep monthly costs predictable.
+
 ## Runtime Environment Variables
 
 Set these variables in your hosting provider to tune API limits:

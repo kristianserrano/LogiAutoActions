@@ -1,0 +1,30 @@
+using System;
+
+namespace __PLUGIN_NAMESPACE__;
+
+public class __CLASS_NAME__ToggleCommand : PluginDynamicCommand
+{
+    private readonly String[] _shortcuts = new[] { __SHORTCUT_LIST__ };
+    private Boolean _isSecondState;
+
+    public __CLASS_NAME__ToggleCommand()
+        : base("__ACTION_NAME__", "__ACTION_DESCRIPTION__", "__ACTION_GROUP__")
+    {
+    }
+
+    protected override void RunCommand(String actionParameter)
+    {
+        _isSecondState = !_isSecondState;
+
+        if (_shortcuts.Length > 0)
+        {
+            var shortcutIndex = _isSecondState ? Math.Min(1, _shortcuts.Length - 1) : 0;
+            GeneratedShortcutDispatcher.TrySendShortcut(this.Plugin, _shortcuts[shortcutIndex]);
+        }
+
+        this.ActionImageChanged();
+    }
+
+    protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
+        => _isSecondState ? "__STATE_B__" : "__STATE_A__";
+}

@@ -29,6 +29,20 @@ const generatorContractSchema = {
       type: 'string',
       pattern: '^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$'
     },
+    defaultIconTemplate: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        backgroundColorHex: {
+          type: 'string',
+          pattern: '^#[0-9A-Fa-f]{6}$'
+        },
+        foregroundColorHex: {
+          type: 'string',
+          pattern: '^#[0-9A-Fa-f]{6}$'
+        }
+      }
+    },
     appLinking: {
       type: 'object',
       additionalProperties: false,

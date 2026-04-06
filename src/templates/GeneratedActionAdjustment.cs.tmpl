@@ -1,0 +1,40 @@
+using System;
+
+namespace __PLUGIN_NAMESPACE__;
+
+public class __CLASS_NAME__Adjustment : PluginDynamicAdjustment
+{
+    private readonly String[] _shortcuts = new[] { __SHORTCUT_LIST__ };
+    private Int32 _value = 100;
+
+    public __CLASS_NAME__Adjustment()
+        : base("__ACTION_NAME__", "__ACTION_DESCRIPTION__", "__ACTION_GROUP__", hasReset: true)
+    {
+    }
+
+    protected override void ApplyAdjustment(String actionParameter, Int32 diff)
+    {
+        _value += diff;
+
+        if (_shortcuts.Length > 0)
+        {
+            var shortcutIndex = diff >= 0 ? 0 : Math.Min(1, _shortcuts.Length - 1);
+            GeneratedShortcutDispatcher.TrySendShortcut(this.Plugin, _shortcuts[shortcutIndex]);
+        }
+
+        this.AdjustmentValueChanged();
+    }
+
+    protected override void RunCommand(String actionParameter)
+    {
+        _value = 100;
+        if (_shortcuts.Length > 0)
+        {
+            GeneratedShortcutDispatcher.TrySendShortcut(this.Plugin, _shortcuts[0]);
+        }
+        this.AdjustmentValueChanged();
+    }
+
+    protected override String GetAdjustmentValue(String actionParameter)
+        => $"{_value}%";
+}

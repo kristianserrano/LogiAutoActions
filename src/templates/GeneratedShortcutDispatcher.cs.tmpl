@@ -1,0 +1,291 @@
+using System;
+using System.Linq;
+using System.Reflection;
+
+namespace __PLUGIN_NAMESPACE__;
+
+internal static class GeneratedShortcutDispatcher
+{
+  public static void TrySendShortcut(Plugin plugin, String shortcut)
+  {
+    if (plugin == null || String.IsNullOrWhiteSpace(shortcut))
+    {
+      return;
+    }
+
+    try
+    {
+      var clientApplication = plugin.ClientApplication;
+      if (clientApplication == null)
+      {
+        return;
+      }
+
+      var clientType = clientApplication.GetType();
+      var directStringMethod = clientType.GetMethod("SendKeyboardShortcut", new[] { typeof(String) });
+      if (directStringMethod != null)
+      {
+        directStringMethod.Invoke(clientApplication, new object[] { shortcut });
+        return;
+      }
+
+      var candidateMethods = clientType
+        .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+        .Where((method) => String.Equals(method.Name, "SendKeyboardShortcut", StringComparison.Ordinal));
+
+      foreach (var method in candidateMethods)
+      {
+        if (TryInvokeShortcutMethod(clientApplication, shortcut, method))
+        {
+          return;
+        }
+      }
+
+      PluginLog.Warning($"No compatible SendKeyboardShortcut overload found for generated shortcut '{shortcut}'.");
+    }
+    catch (Exception exception)
+    {
+      PluginLog.Warning($"Failed to dispatch generated shortcut '{shortcut}': {exception.Message}");
+    }
+  }
+
+  private static Boolean TryInvokeShortcutMethod(Object clientApplication, String shortcut, MethodInfo methodInfo)
+  {
+    var parameters = methodInfo.GetParameters();
+    if (parameters.Length == 1)
+    {
+      return TryInvokeSingleParameterShortcutMethod(clientApplication, shortcut, methodInfo);
+    }
+
+    if (parameters.Length == 2)
+    {
+      return TryInvokeTwoParameterShortcutMethod(clientApplication, shortcut, methodInfo);
+    }
+
+    return false;
+  }
+
+  private static Boolean TryInvokeSingleParameterShortcutMethod(Object clientApplication, String shortcut, MethodInfo methodInfo)
+  {
+    var parameters = methodInfo.GetParameters();
+    var parameterType = parameters[0].ParameterType;
+
+    if (parameterType == typeof(String))
+    {
+      methodInfo.Invoke(clientApplication, new object[] { shortcut });
+      return true;
+    }
+
+    if (!parameterType.IsEnum || shortcut.Contains("+", StringComparison.Ordinal))
+    {
+      return false;
+    }
+
+    if (!TryParseKeyEnum(parameterType, shortcut, out var enumValue))
+    {
+      return false;
+    }
+
+    methodInfo.Invoke(clientApplication, new[] { enumValue });
+    return true;
+  }
+
+  private static Boolean TryInvokeTwoParameterShortcutMethod(Object clientApplication, String shortcut, MethodInfo methodInfo)
+  {
+    var parameters = methodInfo.GetParameters();
+    if (!TryParseShortcutParts(shortcut, out var keyToken, out var modifierTokens))
+    {
+      return false;
+    }
+
+    if (TryBuildTwoParameterArguments(parameters[0].ParameterType, parameters[1].ParameterType, keyToken, modifierTokens, out var args))
+    {
+      methodInfo.Invoke(clientApplication, args);
+      return true;
+    }
+
+    if (TryBuildTwoParameterArguments(parameters[1].ParameterType, parameters[0].ParameterType, keyToken, modifierTokens, out var reversedArgs))
+    {
+      methodInfo.Invoke(clientApplication, new[] { reversedArgs[1], reversedArgs[0] });
+      return true;
+    }
+
+    return false;
+  }
+
+  private static Boolean TryBuildTwoParameterArguments(Type firstType, Type secondType, String keyToken, String[] modifierTokens, out Object[] args)
+  {
+    args = null;
+
+    if (!firstType.IsEnum || !secondType.IsEnum)
+    {
+      return false;
+    }
+
+    if (!TryParseKeyEnum(firstType, keyToken, out var keyValue))
+    {
+      return false;
+    }
+
+    if (!TryParseModifierEnum(secondType, modifierTokens, out var modifierValue))
+    {
+      return false;
+    }
+
+    args = new[] { keyValue, modifierValue };
+    return true;
+  }
+
+  private static Boolean TryParseShortcutParts(String shortcut, out String keyToken, out String[] modifierTokens)
+  {
+    keyToken = String.Empty;
+    modifierTokens = Array.Empty<String>();
+
+    var tokens = shortcut
+      .Split(new[] { '+' }, StringSplitOptions.RemoveEmptyEntries)
+      .Select((token) => token.Trim())
+      .Where((token) => !String.IsNullOrWhiteSpace(token))
+      .ToArray();
+
+    if (tokens.Length == 0)
+    {
+      return false;
+    }
+
+    keyToken = tokens[tokens.Length - 1];
+    modifierTokens = tokens.Take(tokens.Length - 1).ToArray();
+    return !String.IsNullOrWhiteSpace(keyToken);
+  }
+
+  private static Boolean TryParseKeyEnum(Type enumType, String keyToken, out Object enumValue)
+  {
+    enumValue = null;
+    foreach (var candidate in GetKeyEnumCandidates(keyToken))
+    {
+      try
+      {
+        enumValue = Enum.Parse(enumType, candidate, ignoreCase: true);
+        return true;
+      }
+      catch
+      {
+      }
+    }
+
+    return false;
+  }
+
+  private static String[] GetKeyEnumCandidates(String token)
+  {
+    var raw = (token ?? String.Empty).Trim();
+    if (String.IsNullOrWhiteSpace(raw))
+    {
+      return Array.Empty<String>();
+    }
+
+    var compact = raw.Replace(" ", String.Empty, StringComparison.Ordinal);
+    var lowered = compact.ToLowerInvariant();
+
+    if (compact.Length == 1)
+    {
+      var ch = compact[0];
+      if (Char.IsLetter(ch))
+      {
+        var upper = Char.ToUpperInvariant(ch);
+        return new[] { $"Key{upper}", upper.ToString() };
+      }
+
+      if (Char.IsDigit(ch))
+      {
+        return new[] { $"D{ch}", $"Digit{ch}", $"Key{ch}", ch.ToString() };
+      }
+
+      if (ch == '+') return new[] { "OemPlus", "Plus", "Add" };
+      if (ch == '-') return new[] { "OemMinus", "Minus", "Subtract" };
+      if (ch == '/') return new[] { "OemQuestion", "Slash", "Divide" };
+      if (ch == '\\') return new[] { "OemBackslash", "Backslash" };
+      if (ch == ',') return new[] { "OemComma", "Comma" };
+      if (ch == '.') return new[] { "OemPeriod", "Period", "Decimal" };
+      if (ch == ';') return new[] { "OemSemicolon", "Semicolon" };
+      if (ch == '\'') return new[] { "OemQuotes", "Quote", "Apostrophe" };
+      if (ch == '[') return new[] { "OemOpenBrackets", "LeftBracket" };
+      if (ch == ']') return new[] { "OemCloseBrackets", "RightBracket" };
+    }
+
+    if (String.Equals(lowered, "up", StringComparison.Ordinal)) return new[] { "ArrowUp", "Up" };
+    if (String.Equals(lowered, "down", StringComparison.Ordinal)) return new[] { "ArrowDown", "Down" };
+    if (String.Equals(lowered, "left", StringComparison.Ordinal)) return new[] { "ArrowLeft", "Left" };
+    if (String.Equals(lowered, "right", StringComparison.Ordinal)) return new[] { "ArrowRight", "Right" };
+    if (String.Equals(lowered, "esc", StringComparison.Ordinal)) return new[] { "Escape", "Esc" };
+
+    return new[] { compact, raw };
+  }
+
+  private static Boolean TryParseModifierEnum(Type enumType, String[] modifierTokens, out Object enumValue)
+  {
+    enumValue = null;
+
+    if (modifierTokens == null || modifierTokens.Length == 0)
+    {
+      try
+      {
+        enumValue = Enum.Parse(enumType, "None", ignoreCase: true);
+        return true;
+      }
+      catch
+      {
+        enumValue = Enum.ToObject(enumType, 0);
+        return true;
+      }
+    }
+
+    UInt64 aggregate = 0;
+    foreach (var modifierToken in modifierTokens)
+    {
+      if (!TryParseSingleModifier(enumType, modifierToken, out var parsedValue))
+      {
+        return false;
+      }
+
+      aggregate |= Convert.ToUInt64(parsedValue);
+    }
+
+    enumValue = Enum.ToObject(enumType, aggregate);
+    return true;
+  }
+
+  private static Boolean TryParseSingleModifier(Type enumType, String token, out Object enumValue)
+  {
+    enumValue = null;
+    var compact = (token ?? String.Empty).Trim();
+    if (String.IsNullOrWhiteSpace(compact))
+    {
+      return false;
+    }
+
+    var lowered = compact.ToLowerInvariant();
+    var candidates = lowered switch
+    {
+      "ctrl" or "control" => new[] { "Control", "Ctrl" },
+      "cmd" or "command" or "meta" => new[] { "Command", "Cmd", "Meta" },
+      "alt" or "option" => new[] { "Alt", "Option" },
+      "shift" => new[] { "Shift" },
+      "win" or "windows" => new[] { "Win", "Windows", "Meta" },
+      _ => new[] { compact }
+    };
+
+    foreach (var candidate in candidates)
+    {
+      try
+      {
+        enumValue = Enum.Parse(enumType, candidate, ignoreCase: true);
+        return true;
+      }
+      catch
+      {
+      }
+    }
+
+    return false;
+  }
+}

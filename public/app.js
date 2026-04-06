@@ -17,6 +17,9 @@ const actionNameEl = document.getElementById('actionName');
 const actionDescriptionEl = document.getElementById('actionDescription');
 const appIconFileEl = document.getElementById('appIconFile');
 const appIconStatusEl = document.getElementById('appIconStatus');
+const defaultIconBgColorEl = document.getElementById('defaultIconBgColor');
+const defaultIconFgColorEl = document.getElementById('defaultIconFgColor');
+const defaultIconTemplateStatusEl = document.getElementById('defaultIconTemplateStatus');
 
 const shortcutUrlEl = document.getElementById('shortcutUrl');
 const shortcutTextEl = document.getElementById('shortcutText');
@@ -30,6 +33,17 @@ const runDiagnosticsBtn = document.getElementById('runDiagnostics');
 const copyLlmPromptBtn = document.getElementById('copyLlmPrompt');
 const applyLlmResponseBtn = document.getElementById('applyLlmResponse');
 const llmResponseEl = document.getElementById('llmResponse');
+const newGroupNameEl = document.getElementById('newGroupName');
+const addActionGroupBtn = document.getElementById('addActionGroup');
+const groupingResultEl = document.getElementById('groupingResult');
+const groupingBoardEl = document.getElementById('groupingBoard');
+const groupAssistPanelEl = document.getElementById('groupAssistPanel');
+const parsedActionRowTemplateEl = document.getElementById('parsedActionRowTemplate');
+const approvalCardTemplateEl = document.getElementById('approvalCardTemplate');
+const groupingGridTemplateEl = document.getElementById('groupingGridTemplate');
+const groupColumnTemplateEl = document.getElementById('groupColumnTemplate');
+const groupActionChipTemplateEl = document.getElementById('groupActionChipTemplate');
+const groupDropzoneEmptyTemplateEl = document.getElementById('groupDropzoneEmptyTemplate');
 
 let extractedShortcuts = [];
 let parsedActions = [];
@@ -40,6 +54,59 @@ let recordingActionId = null;
 let currentUiStep = 1;
 let isLoadingApprovalCards = false;
 let readinessRequestVersion = 0;
+let groupingBuckets = [];
+let defaultIconBackgroundHex = '#287c67';
+let defaultIconForegroundHex = '#ffffff';
+let foregroundColorOverride = false;
+
+const DEFAULT_GROUP_NAME = 'Generated';
+const UNGROUPED_LABEL = 'No Group';
+const NO_GROUP_LABEL = 'No group';
+
+function normalizeHexColor(value, fallback = '#287c67') {
+  const raw = String(value || '').trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(raw)) {
+    return raw.toLowerCase();
+  }
+  return fallback;
+}
+
+function hexToRgb(hexColor) {
+  const normalized = normalizeHexColor(hexColor, '#287c67').slice(1);
+  return {
+    r: Number.parseInt(normalized.slice(0, 2), 16),
+    g: Number.parseInt(normalized.slice(2, 4), 16),
+    b: Number.parseInt(normalized.slice(4, 6), 16)
+  };
+}
+
+function srgbToLinear(channel) {
+  const value = channel / 255;
+  return value <= 0.04045
+    ? value / 12.92
+    : ((value + 0.055) / 1.055) ** 2.4;
+}
+
+function relativeLuminance(rgb) {
+  return (
+    0.2126 * srgbToLinear(rgb.r)
+    + 0.7152 * srgbToLinear(rgb.g)
+    + 0.0722 * srgbToLinear(rgb.b)
+  );
+}
+
+function pickContrastingTextColor(backgroundHex) {
+  const luminance = relativeLuminance(hexToRgb(backgroundHex));
+  const contrastWithWhite = 1.05 / (luminance + 0.05);
+  const contrastWithBlack = (luminance + 0.05) / 0.05;
+  return contrastWithWhite >= contrastWithBlack ? '#ffffff' : '#000000';
+}
+
+function getIconForegroundFilter(foregroundHex) {
+  return String(foregroundHex || '').toLowerCase() === '#ffffff'
+    ? 'brightness(0) invert(1)'
+    : 'brightness(0) saturate(100%)';
+}
 
 function setAppIconStatus(kind, message) {
   if (!appIconStatusEl) {
@@ -50,14 +117,68 @@ function setAppIconStatus(kind, message) {
   appIconStatusEl.textContent = message;
 }
 
-function updateStep1ContinueState() {
-  const hasParsedActions = parsedActions.length > 0;
-  const hasPluginName = Boolean(actionNameEl && actionNameEl.value.trim());
-  const hasDescription = Boolean(actionDescriptionEl && actionDescriptionEl.value.trim());
-  const hasAppIcon = Boolean(pluginIconAssetPath);
+function setDefaultIconTemplateStatus(kind, message) {
+  if (!defaultIconTemplateStatusEl) {
+    return;
+  }
 
+  defaultIconTemplateStatusEl.className = `readiness readiness-${kind}`;
+  defaultIconTemplateStatusEl.textContent = message;
+}
+
+function setDefaultIconTemplateColor(hexColor, sourceLabel) {
+  const normalized = normalizeHexColor(hexColor, defaultIconBackgroundHex);
+  defaultIconBackgroundHex = normalized;
+
+  if (!foregroundColorOverride) {
+    defaultIconForegroundHex = pickContrastingTextColor(normalized);
+  }
+
+  if (defaultIconBgColorEl) {
+    defaultIconBgColorEl.value = normalized;
+  }
+
+  if (defaultIconFgColorEl) {
+    defaultIconFgColorEl.value = defaultIconForegroundHex;
+  }
+
+  const foregroundSource = foregroundColorOverride
+    ? 'manual selection'
+    : `auto contrast (${sourceLabel})`;
+
+  setDefaultIconTemplateStatus(
+    'info',
+    `Default icon background: ${defaultIconBackgroundHex}. Foreground: ${defaultIconForegroundHex} (${foregroundSource}).`
+  );
+
+  if (approvalActions.length > 0 && !step3PanelEl.classList.contains('is-hidden')) {
+    renderApprovalCards();
+  }
+}
+
+function setDefaultIconForegroundColor(hexColor, sourceLabel = 'manual selection') {
+  const normalized = normalizeHexColor(hexColor, defaultIconForegroundHex);
+  defaultIconForegroundHex = normalized;
+  foregroundColorOverride = true;
+
+  if (defaultIconFgColorEl) {
+    defaultIconFgColorEl.value = normalized;
+  }
+
+  setDefaultIconTemplateStatus(
+    'info',
+    `Default icon background: ${defaultIconBackgroundHex}. Foreground: ${defaultIconForegroundHex} (${sourceLabel}).`
+  );
+
+  if (approvalActions.length > 0 && !step3PanelEl.classList.contains('is-hidden')) {
+    renderApprovalCards();
+  }
+}
+
+function updateStep1ContinueState() {
   if (goToStep3Btn) {
-    goToStep3Btn.disabled = !(hasParsedActions && hasPluginName && hasDescription && hasAppIcon);
+    // Keep the button clickable so users can always see validation guidance.
+    goToStep3Btn.disabled = false;
   }
 }
 
@@ -114,6 +235,11 @@ async function prepareUploadedAppIcon(file) {
 
     pluginIconAssetPath = String(data.pluginIcon.assetPath || '').trim();
     setAppIconStatus('ok', 'App icon ready (converted to 256x256 PNG).');
+    const dominantColorHex = normalizeHexColor(
+      data.pluginIcon && data.pluginIcon.dominantColorHex ? data.pluginIcon.dominantColorHex : '',
+      defaultIconBackgroundHex
+    );
+    setDefaultIconTemplateColor(dominantColorHex, 'auto-picked from app icon');
     updateStep1ContinueState();
   } catch (error) {
     pluginIconAssetPath = '';
@@ -144,22 +270,15 @@ function showStep(stepNumber, options = {}) {
   const effectiveStep = stepNumber < 3 ? 1 : 2;
   updateStepTrack(effectiveStep);
 
-  const panelByStep = {
-    1: step2PanelEl,
-    2: step2PanelEl,
-    3: step3PanelEl
-  };
+  if (scroll) {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   const focusByStep = {
     1: shortcutUrlEl,
     2: shortcutUrlEl,
     3: runMockBuildBtn
   };
-
-  const panel = panelByStep[stepNumber];
-  if (panel && scroll) {
-    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
 
   const target = focusByStep[stepNumber];
   if (target && focus) {
@@ -379,6 +498,15 @@ function setLlmAssistStatus(kind, message) {
   llmAssistResultEl.textContent = message;
 }
 
+function setGroupingStatus(kind, message) {
+  if (!groupingResultEl) {
+    return;
+  }
+
+  groupingResultEl.className = `readiness readiness-${kind}`;
+  groupingResultEl.textContent = message;
+}
+
 function setBuildStatus(kind, message) {
   buildResultEl.className = `readiness readiness-${kind}`;
   buildResultEl.textContent = message;
@@ -416,9 +544,54 @@ function labelPack(pack) {
   return 'Icon style';
 }
 
+function setParsedActionsMessage(message) {
+  if (!parsedActionsBodyEl) {
+    return;
+  }
+
+  const row = document.createElement('tr');
+  const cell = document.createElement('td');
+  cell.colSpan = 3;
+  cell.textContent = String(message || '');
+  row.appendChild(cell);
+
+  parsedActionsBodyEl.textContent = '';
+  parsedActionsBodyEl.appendChild(row);
+}
+
+function buildParsedActionRow(item) {
+  if (!parsedActionRowTemplateEl) {
+    const fallbackRow = document.createElement('tr');
+    const actionCell = document.createElement('td');
+    actionCell.textContent = item.actionName;
+    const shortcutCell = document.createElement('td');
+    shortcutCell.textContent = item.shortcut;
+    const sourceCell = document.createElement('td');
+    sourceCell.textContent = item.sourceText;
+    fallbackRow.appendChild(actionCell);
+    fallbackRow.appendChild(shortcutCell);
+    fallbackRow.appendChild(sourceCell);
+    return fallbackRow;
+  }
+
+  const fragment = parsedActionRowTemplateEl.content.cloneNode(true);
+  const row = fragment.querySelector('tr');
+  if (!row) {
+    return null;
+  }
+
+  const nameEl = row.querySelector('.parsed-action-name');
+  const shortcutEl = row.querySelector('.parsed-action-shortcut');
+  const sourceEl = row.querySelector('.parsed-action-source');
+  if (nameEl) nameEl.textContent = String(item.actionName || '');
+  if (shortcutEl) shortcutEl.textContent = String(item.shortcut || '');
+  if (sourceEl) sourceEl.textContent = String(item.sourceText || '');
+  return fragment;
+}
+
 function renderParsedActionsTable() {
   if (!parsedActions.length) {
-    parsedActionsBodyEl.innerHTML = '<tr><td colspan="3">No shortcuts extracted yet.</td></tr>';
+    setParsedActionsMessage('No shortcuts extracted yet.');
     updateStep1ContinueState();
     if (step3PanelEl.classList.contains('is-hidden')) {
       updateStepTrack(1);
@@ -426,15 +599,15 @@ function renderParsedActionsTable() {
     return;
   }
 
-  parsedActionsBodyEl.innerHTML = parsedActions
-    .map((item) => `
-      <tr>
-        <td>${item.actionName}</td>
-        <td>${item.shortcut}</td>
-        <td>${item.sourceText}</td>
-      </tr>
-    `)
-    .join('');
+  parsedActionsBodyEl.textContent = '';
+  const tableFragment = document.createDocumentFragment();
+  for (const item of parsedActions) {
+    const row = buildParsedActionRow(item);
+    if (row) {
+      tableFragment.appendChild(row);
+    }
+  }
+  parsedActionsBodyEl.appendChild(tableFragment);
 
   updateStep1ContinueState();
   if (step3PanelEl.classList.contains('is-hidden')) {
@@ -462,11 +635,11 @@ function buildGeneratorPayloadFromApprovals() {
         intent.states = states;
       }
 
-      return {
+      const normalizedGroupPath = normalizeGroupName(item.groupPath || '');
+      const generatedAction = {
         id: item.id || `generated_action_${index + 1}`,
         name: item.name,
         description: item.description || 'Generated action',
-        groupPath: item.groupPath || 'Generated',
         actionKind: item.actionKind,
         intent,
         behavior: {
@@ -482,8 +655,357 @@ function buildGeneratorPayloadFromApprovals() {
           }
           : undefined
       };
+
+      if (normalizedGroupPath && !isDefaultGroupName(normalizedGroupPath)) {
+        generatedAction.groupPath = normalizedGroupPath;
+      }
+
+      return generatedAction;
     })
   };
+}
+
+function normalizeGroupName(value) {
+  const name = String(value || '').trim().replace(/\s+/g, ' ');
+  return name;
+}
+
+function isDefaultGroupName(value) {
+  return String(value || '').trim().toLowerCase() === DEFAULT_GROUP_NAME.toLowerCase();
+}
+
+function ensureGroupingBucketsFromActions() {
+  const fromActions = new Set(
+    approvalActions
+      .map((item) => normalizeGroupName(item.groupPath || ''))
+      .filter((name) => name && !isDefaultGroupName(name))
+  );
+
+  const ordered = [];
+  for (const name of groupingBuckets) {
+    const normalized = normalizeGroupName(name);
+    if (normalized && !ordered.includes(normalized)) {
+      ordered.push(normalized);
+    }
+  }
+
+  for (const name of fromActions) {
+    if (!ordered.includes(name)) {
+      ordered.push(name);
+    }
+  }
+
+  groupingBuckets = ordered;
+}
+
+function getActionsForGroup(groupName) {
+  return approvalActions.filter((item) => {
+    const value = normalizeGroupName(item.groupPath || '');
+    return value === groupName;
+  });
+}
+
+function getUngroupedActions() {
+  return approvalActions.filter((item) => {
+    const value = normalizeGroupName(item.groupPath || '');
+    return !value || isDefaultGroupName(value);
+  });
+}
+
+function buildGroupActionChipNode(action) {
+  if (!groupActionChipTemplateEl) {
+    const fallback = document.createElement('span');
+    fallback.className = 'group-action-chip';
+    fallback.draggable = true;
+    fallback.dataset.actionId = String(action.id || '');
+    fallback.title = 'Drag to move';
+
+    const iconWrap = document.createElement('span');
+    iconWrap.className = 'group-action-chip-icon-wrap';
+    iconWrap.style.backgroundColor = defaultIconBackgroundHex;
+    const iconImg = document.createElement('img');
+    iconImg.className = 'group-action-chip-icon';
+    iconImg.style.filter = getIconForegroundFilter(defaultIconForegroundHex);
+    const previewUrl = iconPreviewUrl(action && action.icon ? action.icon.path : '');
+    if (previewUrl) {
+      iconImg.src = previewUrl;
+      iconImg.hidden = false;
+    } else {
+      iconImg.hidden = true;
+    }
+    iconWrap.appendChild(iconImg);
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'group-action-chip-name';
+    nameEl.textContent = String(action.name || '');
+
+    fallback.appendChild(iconWrap);
+    fallback.appendChild(nameEl);
+    return fallback;
+  }
+
+  const fragment = groupActionChipTemplateEl.content.cloneNode(true);
+  const chip = fragment.querySelector('.group-action-chip');
+  if (!chip) {
+    return null;
+  }
+
+  chip.dataset.actionId = String(action.id || '');
+  const chipNameEl = chip.querySelector('.group-action-chip-name');
+  if (chipNameEl) {
+    chipNameEl.textContent = String(action.name || '');
+  }
+
+  const chipIconEl = chip.querySelector('.group-action-chip-icon');
+  const chipIconWrapEl = chip.querySelector('.group-action-chip-icon-wrap');
+  if (chipIconWrapEl) {
+    chipIconWrapEl.style.backgroundColor = defaultIconBackgroundHex;
+  }
+  if (chipIconEl) {
+    chipIconEl.style.filter = getIconForegroundFilter(defaultIconForegroundHex);
+    const previewUrl = iconPreviewUrl(action && action.icon ? action.icon.path : '');
+    if (previewUrl) {
+      chipIconEl.src = previewUrl;
+      chipIconEl.hidden = false;
+    } else {
+      chipIconEl.src = '';
+      chipIconEl.hidden = true;
+    }
+  }
+
+  return fragment;
+}
+
+function appendGroupActionChips(dropzoneEl, actions) {
+  if (!dropzoneEl) {
+    return;
+  }
+
+  if (!Array.isArray(actions) || actions.length === 0) {
+    if (groupDropzoneEmptyTemplateEl) {
+      dropzoneEl.appendChild(groupDropzoneEmptyTemplateEl.content.cloneNode(true));
+      return;
+    }
+
+    const emptyEl = document.createElement('div');
+    emptyEl.className = 'group-dropzone-empty';
+    emptyEl.textContent = 'Drop actions here';
+    dropzoneEl.appendChild(emptyEl);
+    return;
+  }
+
+  for (const action of actions) {
+    const chip = buildGroupActionChipNode(action);
+    if (chip) {
+      dropzoneEl.appendChild(chip);
+    }
+  }
+}
+
+function buildGroupColumnNode(columnTitle, dropGroupValue, actions, options = {}) {
+  const { removable = false, groupColumnValue = '' } = options;
+
+  let fragment;
+  if (groupColumnTemplateEl) {
+    fragment = groupColumnTemplateEl.content.cloneNode(true);
+  } else {
+    fragment = document.createDocumentFragment();
+    const section = document.createElement('section');
+    section.className = 'group-column';
+    section.dataset.groupColumn = '';
+
+    const header = document.createElement('div');
+    header.className = 'group-column-header';
+
+    const title = document.createElement('span');
+    title.className = 'group-column-title';
+    header.appendChild(title);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'group-remove';
+    removeBtn.type = 'button';
+    removeBtn.textContent = 'Remove';
+    header.appendChild(removeBtn);
+
+    const dropzone = document.createElement('div');
+    dropzone.className = 'group-dropzone';
+    dropzone.dataset.dropGroup = '';
+
+    section.appendChild(header);
+    section.appendChild(dropzone);
+    fragment.appendChild(section);
+  }
+
+  const sectionEl = fragment.querySelector('.group-column');
+  if (!sectionEl) {
+    return null;
+  }
+
+  sectionEl.dataset.groupColumn = String(groupColumnValue || '');
+
+  const titleEl = sectionEl.querySelector('.group-column-title');
+  if (titleEl) {
+    titleEl.textContent = String(columnTitle || '');
+  }
+
+  const removeButtonEl = sectionEl.querySelector('.group-remove');
+  if (removeButtonEl) {
+    removeButtonEl.hidden = !removable;
+    removeButtonEl.dataset.removeGroup = removable ? String(groupColumnValue || '') : '';
+  }
+
+  const dropzoneEl = sectionEl.querySelector('.group-dropzone');
+  if (dropzoneEl) {
+    dropzoneEl.dataset.dropGroup = String(dropGroupValue || '');
+    appendGroupActionChips(dropzoneEl, actions);
+  }
+
+  return fragment;
+}
+
+function renderGroupingBoard() {
+  if (!groupingBoardEl) {
+    return;
+  }
+
+  ensureGroupingBucketsFromActions();
+
+  const ungroupedActions = getUngroupedActions();
+  groupingBoardEl.textContent = '';
+
+  let gridFragment;
+  if (groupingGridTemplateEl) {
+    gridFragment = groupingGridTemplateEl.content.cloneNode(true);
+  } else {
+    gridFragment = document.createDocumentFragment();
+    const grid = document.createElement('div');
+    grid.className = 'grouping-grid';
+    gridFragment.appendChild(grid);
+  }
+
+  const gridEl = gridFragment.querySelector('.grouping-grid');
+  if (!gridEl) {
+    groupingBoardEl.textContent = 'Could not render grouping board.';
+    return;
+  }
+
+  const ungroupedColumn = buildGroupColumnNode(UNGROUPED_LABEL, '', ungroupedActions, {
+    removable: false,
+    groupColumnValue: ''
+  });
+  if (ungroupedColumn) {
+    gridEl.appendChild(ungroupedColumn);
+  }
+
+  for (const groupName of groupingBuckets) {
+    const actions = getActionsForGroup(groupName);
+    const groupColumn = buildGroupColumnNode(groupName, groupName, actions, {
+      removable: true,
+      groupColumnValue: groupName
+    });
+    if (groupColumn) {
+      gridEl.appendChild(groupColumn);
+    }
+  }
+
+  groupingBoardEl.appendChild(gridFragment);
+
+  for (const chip of groupingBoardEl.querySelectorAll('.group-action-chip')) {
+    chip.addEventListener('dragstart', (event) => {
+      const actionId = String(chip.dataset.actionId || '').trim();
+      if (!actionId) {
+        return;
+      }
+
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', actionId);
+    });
+  }
+
+  for (const zone of groupingBoardEl.querySelectorAll('.group-dropzone')) {
+    zone.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      zone.classList.add('is-over');
+    });
+
+    zone.addEventListener('dragleave', () => {
+      zone.classList.remove('is-over');
+    });
+
+    zone.addEventListener('drop', (event) => {
+      event.preventDefault();
+      zone.classList.remove('is-over');
+
+      const actionId = String(event.dataTransfer.getData('text/plain') || '').trim();
+      if (!actionId) {
+        return;
+      }
+
+      const targetGroupRaw = String(zone.dataset.dropGroup || '').trim();
+      const targetGroup = normalizeGroupName(targetGroupRaw);
+      const action = approvalActions.find((item) => item.id === actionId);
+      if (!action) {
+        return;
+      }
+
+      action.groupPath = targetGroup || '';
+      if (targetGroup && !groupingBuckets.includes(targetGroup)) {
+        groupingBuckets.push(targetGroup);
+      }
+
+      setGroupingStatus('ok', `Moved "${action.name}" to ${targetGroup || UNGROUPED_LABEL}.`);
+      renderGroupingBoard();
+      renderApprovalCards();
+    });
+  }
+
+  for (const button of groupingBoardEl.querySelectorAll('.group-remove')) {
+    button.addEventListener('click', () => {
+      const groupName = normalizeGroupName(button.dataset.removeGroup || '');
+      if (!groupName) {
+        return;
+      }
+
+      groupingBuckets = groupingBuckets.filter((item) => item !== groupName);
+      for (const action of approvalActions) {
+        if (normalizeGroupName(action.groupPath || '') === groupName) {
+          action.groupPath = '';
+        }
+      }
+
+      setGroupingStatus('info', `Removed group "${groupName}". Actions moved to ${UNGROUPED_LABEL}.`);
+      renderGroupingBoard();
+      renderApprovalCards();
+    });
+  }
+}
+
+function addGroupingBucketFromInput() {
+  if (!newGroupNameEl) {
+    return;
+  }
+
+  const groupName = normalizeGroupName(newGroupNameEl.value);
+  if (!groupName) {
+    setGroupingStatus('warn', 'Enter a group name first.');
+    return;
+  }
+
+  if (isDefaultGroupName(groupName)) {
+    setGroupingStatus('warn', `"${DEFAULT_GROUP_NAME}" is reserved for ${UNGROUPED_LABEL}.`);
+    return;
+  }
+
+  if (groupingBuckets.some((item) => item.toLowerCase() === groupName.toLowerCase())) {
+    setGroupingStatus('warn', `Group "${groupName}" already exists.`);
+    return;
+  }
+
+  groupingBuckets.push(groupName);
+  newGroupNameEl.value = '';
+  setGroupingStatus('ok', `Added group "${groupName}". Drag actions into it.`);
+  renderGroupingBoard();
 }
 
 function getReviewIssues(action) {
@@ -499,6 +1021,22 @@ function getReviewIssues(action) {
   }
 
   return issues;
+}
+
+function updateGroupingPanelState() {
+  if (!groupAssistPanelEl) {
+    return;
+  }
+
+  groupAssistPanelEl.hidden = false;
+
+  if (newGroupNameEl) {
+    newGroupNameEl.disabled = false;
+  }
+
+  if (addActionGroupBtn) {
+    addActionGroupBtn.disabled = false;
+  }
 }
 
 function updateBuildButtonState() {
@@ -586,6 +1124,155 @@ function iconPreviewUrl(iconPath) {
   }
 
   return `/api/icons/file?path=${encodeURIComponent(normalized)}`;
+}
+
+function buildApprovalCardNode(item) {
+  if (!approvalCardTemplateEl) {
+    return null;
+  }
+
+  const reviewErrors = getReviewIssues(item);
+  const confirmDisabled = reviewErrors.length > 0;
+  const recording = recordingActionId === item.id;
+  const needsReview = item.approval !== 'approved';
+  const confidencePercent = Math.round((item.confidence || 0) * 100);
+  const iconPath = item.icon && item.icon.path ? item.icon.path : '';
+  const suggestedIconText = item.icon && item.icon.pack
+    ? `${item.icon.pack}: ${iconPath || 'None'}`
+    : (iconPath || 'None');
+  const iconInputValue = item.iconInput || iconNameFromPath(iconPath) || iconPath;
+  const previewUrl = iconPreviewUrl(iconPath);
+
+  const fragment = approvalCardTemplateEl.content.cloneNode(true);
+  const card = fragment.querySelector('.approval-card');
+  if (!card) {
+    return null;
+  }
+
+  card.dataset.actionId = item.id;
+
+  const titleTextEl = card.querySelector('.approval-title-text');
+  if (titleTextEl) {
+    titleTextEl.textContent = item.name;
+  }
+
+  const confidenceEl = card.querySelector('.approval-confidence');
+  if (confidenceEl) {
+    if (needsReview) {
+      confidenceEl.textContent = `Confidence: ${confidencePercent}%`;
+      confidenceEl.hidden = false;
+    } else {
+      confidenceEl.textContent = '';
+      confidenceEl.hidden = true;
+    }
+  }
+
+  const approvalChipEl = card.querySelector('.approval-state-chip');
+  if (approvalChipEl) {
+    approvalChipEl.className = `chip ${approvalClass(item.approval)} approval-state-chip`;
+    approvalChipEl.textContent = approvalLabel(item.approval);
+  }
+
+  const kindChipEl = card.querySelector('.approval-kind-chip');
+  if (kindChipEl) {
+    kindChipEl.textContent = item.actionKind;
+  }
+
+  const groupChipEl = card.querySelector('.approval-group-chip');
+  if (groupChipEl) {
+    groupChipEl.textContent = normalizeGroupName(item.groupPath || '') || NO_GROUP_LABEL;
+  }
+
+  const packChipEl = card.querySelector('.approval-pack-chip');
+  if (packChipEl) {
+    if (item.icon && item.icon.path) {
+      packChipEl.textContent = labelPack(item.icon.pack || 'unknown');
+      packChipEl.hidden = false;
+    } else {
+      packChipEl.textContent = '';
+      packChipEl.hidden = true;
+    }
+  }
+
+  const nameInput = card.querySelector('.approval-name');
+  if (nameInput) {
+    nameInput.value = item.name;
+    nameInput.dataset.actionId = item.id;
+  }
+
+  const shortcutsInput = card.querySelector('.approval-shortcuts');
+  if (shortcutsInput) {
+    shortcutsInput.value = (item.shortcuts || []).join(', ');
+    shortcutsInput.dataset.actionId = item.id;
+  }
+
+  const iconPreviewWrap = card.querySelector('.icon-label-preview');
+  const iconPreviewImg = card.querySelector('.approval-icon-preview');
+  if (iconPreviewWrap) {
+    iconPreviewWrap.classList.toggle('is-empty', !previewUrl);
+    if (previewUrl) {
+      iconPreviewWrap.style.background = defaultIconBackgroundHex;
+    } else {
+      iconPreviewWrap.style.background = '';
+    }
+  }
+  if (iconPreviewImg) {
+    iconPreviewImg.style.filter = getIconForegroundFilter(defaultIconForegroundHex);
+    if (previewUrl) {
+      iconPreviewImg.src = previewUrl;
+      iconPreviewImg.hidden = false;
+    } else {
+      iconPreviewImg.src = '';
+      iconPreviewImg.hidden = true;
+    }
+  }
+
+  const iconInput = card.querySelector('.approval-icon-path');
+  if (iconInput) {
+    iconInput.value = iconInputValue;
+    iconInput.dataset.actionId = item.id;
+  }
+
+  const suggestedIconTextEl = card.querySelector('.suggested-icon-text');
+  if (suggestedIconTextEl) {
+    suggestedIconTextEl.textContent = suggestedIconText;
+  }
+
+  const confirmBtn = card.querySelector('.approval-confirm');
+  if (confirmBtn) {
+    confirmBtn.dataset.actionId = item.id;
+    confirmBtn.disabled = confirmDisabled;
+    confirmBtn.hidden = !needsReview;
+  }
+
+  const clearBtn = card.querySelector('.approval-clear-shortcuts');
+  if (clearBtn) {
+    clearBtn.dataset.actionId = item.id;
+  }
+
+  const recordBtn = card.querySelector('.approval-record');
+  if (recordBtn) {
+    recordBtn.dataset.actionId = item.id;
+    recordBtn.textContent = recording ? 'Press keys now...' : 'Record Shortcut';
+  }
+
+  const removeBtn = card.querySelector('.approval-remove');
+  if (removeBtn) {
+    removeBtn.dataset.actionId = item.id;
+  }
+
+  const errorsEl = card.querySelector('.approval-errors');
+  if (errorsEl) {
+    if (reviewErrors.length > 0) {
+      errorsEl.textContent = reviewErrors.join(' | ');
+      errorsEl.hidden = false;
+    } else {
+      errorsEl.textContent = '';
+      errorsEl.hidden = true;
+    }
+  }
+
+  return fragment;
 }
 
 async function resolveIconInputValue(inputValue, preferredPack) {
@@ -679,7 +1366,7 @@ function canonicalKeyToken(token) {
   }
 
   if (/^[a-z0-9]$/i.test(raw)) {
-    return raw.toUpperCase();
+    return raw;
   }
 
   if (/^[^\s\w]$/.test(raw)) {
@@ -913,18 +1600,11 @@ async function validateAndApplyLlmResponse() {
       syncActionReviewState(action);
     }
 
-    if (!pluginIconAssetPath && data.pluginIcon && data.pluginIcon.assetPath) {
-      pluginIconAssetPath = String(data.pluginIcon.assetPath || '').trim();
-      setAppIconStatus('ok', 'App icon prepared from LLM response.');
-      updateStep1ContinueState();
-    }
-
     const warnings = formatIssueList(data.warnings);
     if (warnings) {
       setLlmAssistStatus('warn', `Applied with warnings: ${warnings}`);
     } else {
-      const pluginIconMessage = pluginIconAssetPath ? ' Plugin icon prepared.' : '';
-      setLlmAssistStatus('ok', `Applied ${resolved.length} icon assignment(s).${pluginIconMessage}`);
+      setLlmAssistStatus('ok', `Applied ${resolved.length} icon assignment(s).`);
     }
 
     setReadiness('info', 'LLM icon assignments were validated and applied. Review cards and continue to build.');
@@ -950,7 +1630,6 @@ function formatShortcutFromEvent(event) {
   let normalized = key;
   if (normalized === ' ') normalized = 'Space';
   if (normalized.startsWith('Arrow')) normalized = normalized.replace('Arrow', '');
-  if (normalized.length === 1) normalized = normalized.toUpperCase();
 
   return normalizeShortcutCombo([...parts, normalized].join('+'));
 }
@@ -988,11 +1667,14 @@ async function refreshActionCode(action) {
 }
 
 function renderApprovalCards() {
+  updateGroupingPanelState();
+
   if (!approvalActions.length) {
     if (approvalSummaryEl) {
       approvalSummaryEl.textContent = '0/0 actions ready.';
     }
     approvalResultsEl.textContent = 'Your actions will appear here.';
+    renderGroupingBoard();
     updateBuildButtonState();
     void refreshReadinessStatus();
     return;
@@ -1003,60 +1685,15 @@ function renderApprovalCards() {
     approvalSummaryEl.textContent = `${approvedCount}/${approvalActions.length} actions ready.`;
   }
 
-  approvalResultsEl.innerHTML = `${approvalActions.map((item) => {
-      const reviewErrors = getReviewIssues(item);
-      const confirmDisabled = reviewErrors.length > 0;
-      const recording = recordingActionId === item.id;
-      const needsReview = item.approval !== 'approved';
-      const confidencePercent = Math.round((item.confidence || 0) * 100);
-      const iconPath = item.icon && item.icon.path ? item.icon.path : '';
-      const suggestedIconText = item.icon && item.icon.pack
-        ? `${item.icon.pack}: ${iconPath || 'None'}`
-        : (iconPath || 'None');
-      const iconInputValue = item.iconInput || iconNameFromPath(iconPath) || iconPath;
-      const previewUrl = iconPreviewUrl(iconPath);
-
-      return `
-        <article class="approval-card" data-action-id="${item.id}">
-          <div class="result-row">
-            <div class="approval-title-wrap">
-              <strong>${item.name}</strong>
-              ${needsReview ? `<div class="approval-confidence">Confidence: ${confidencePercent}%</div>` : ''}
-            </div>
-            <span class="chip ${approvalClass(item.approval)}">${approvalLabel(item.approval)}</span>
-            <span class="chip">${item.actionKind}</span>
-            ${item.icon && item.icon.path ? `<span class="chip">${labelPack(item.icon.pack || 'unknown')}</span>` : ''}
-          </div>
-          <div class="approval-grid">
-            <label>
-              Action name
-              <input class="approval-input approval-name" type="text" value="${item.name}" data-action-id="${item.id}" />
-            </label>
-            <label>
-              Keyboard shortcuts
-              <input class="approval-input approval-shortcuts" type="text" value="${(item.shortcuts || []).join(', ')}" data-action-id="${item.id}" readonly />
-            </label>
-            <label>
-              <span class="label-row">
-                <span>Icon</span>
-                <span class="icon-label-preview${previewUrl ? '' : ' is-empty'}">
-                  ${previewUrl ? `<img src="${previewUrl}" alt="Selected icon" loading="lazy" />` : ''}
-                </span>
-              </span>
-              <input class="approval-input approval-icon-path" type="text" value="${iconInputValue}" data-action-id="${item.id}" placeholder="e.g. circle-right" />
-            </label>
-          </div>
-          <div class="result-path">Suggested icon: ${suggestedIconText}</div>
-          <div class="actions-row">
-            ${needsReview ? `<button class="button button-secondary approval-confirm" type="button" data-action-id="${item.id}" ${confirmDisabled ? 'disabled' : ''}>Confirm</button>` : ''}
-            <button class="button button-secondary approval-clear-shortcuts" type="button" data-action-id="${item.id}">Clear Shortcut</button>
-            <button class="button button-secondary approval-record" type="button" data-action-id="${item.id}">${recording ? 'Press keys now...' : 'Record Shortcut'}</button>
-            <button class="button button-secondary approval-remove" type="button" data-action-id="${item.id}">Remove</button>
-          </div>
-          ${reviewErrors.length > 0 ? `<div class="approval-errors">${reviewErrors.join(' | ')}</div>` : ''}
-        </article>
-      `;
-    }).join('')}`;
+  approvalResultsEl.textContent = '';
+  const cardsFragment = document.createDocumentFragment();
+  for (const item of approvalActions) {
+    const cardNode = buildApprovalCardNode(item);
+    if (cardNode) {
+      cardsFragment.appendChild(cardNode);
+    }
+  }
+  approvalResultsEl.appendChild(cardsFragment);
 
   for (const input of approvalResultsEl.querySelectorAll('.approval-name')) {
     input.addEventListener('change', async (event) => {
@@ -1158,11 +1795,13 @@ function renderApprovalCards() {
     button.addEventListener('click', (event) => {
       const id = event.target.dataset.actionId;
       approvalActions = approvalActions.filter((item) => item.id !== id);
+      ensureGroupingBucketsFromActions();
       recordingActionId = null;
       renderApprovalCards();
     });
   }
 
+  renderGroupingBoard();
   updateBuildButtonState();
   void refreshReadinessStatus();
 }
@@ -1253,21 +1892,21 @@ async function importFromCurrentOptions() {
   const text = shortcutTextEl.value.trim();
 
   if (!url && !file && !text) {
-    parsedActionsBodyEl.innerHTML = '<tr><td colspan="3">Add a URL, upload a file, or paste text first.</td></tr>';
+    setParsedActionsMessage('Add a URL, upload a file, or paste text first.');
     return;
   }
 
   try {
     if (url) {
-      parsedActionsBodyEl.innerHTML = '<tr><td colspan="3">Importing shortcuts from URL...</td></tr>';
+      setParsedActionsMessage('Importing shortcuts from URL...');
       await extractShortcuts({ sourceType: 'url', url });
     } else if (file) {
-      parsedActionsBodyEl.innerHTML = `<tr><td colspan="3">Reading ${file.name}...</td></tr>`;
+      setParsedActionsMessage(`Reading ${file.name}...`);
       const fileText = await file.text();
       shortcutTextEl.value = fileText;
       await extractShortcuts({ sourceType: 'text', text: fileText });
     } else {
-      parsedActionsBodyEl.innerHTML = '<tr><td colspan="3">Importing shortcuts from text...</td></tr>';
+      setParsedActionsMessage('Importing shortcuts from text...');
       await extractShortcuts({ sourceType: 'text', text });
     }
 
@@ -1275,7 +1914,7 @@ async function importFromCurrentOptions() {
       shortcutResultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   } catch (error) {
-    parsedActionsBodyEl.innerHTML = `<tr><td colspan="3">${error.message}</td></tr>`;
+    setParsedActionsMessage(error.message);
   }
 }
 
@@ -1287,13 +1926,27 @@ shortcutFileEl.addEventListener('change', async (event) => {
   const file = event.target.files && event.target.files[0];
   if (!file) return;
 
-  parsedActionsBodyEl.innerHTML = `<tr><td colspan="3">${file.name} selected. Click "Import Shortcuts" to continue.</td></tr>`;
+  setParsedActionsMessage(`${file.name} selected. Click "Import Shortcuts" to continue.`);
 });
 
 if (appIconFileEl) {
   appIconFileEl.addEventListener('change', async (event) => {
     const file = event.target.files && event.target.files[0];
     await prepareUploadedAppIcon(file || null);
+  });
+}
+
+if (defaultIconBgColorEl) {
+  defaultIconBgColorEl.addEventListener('input', (event) => {
+    const colorValue = String(event.target && event.target.value ? event.target.value : '').trim();
+    setDefaultIconTemplateColor(colorValue, 'manual picker');
+  });
+}
+
+if (defaultIconFgColorEl) {
+  defaultIconFgColorEl.addEventListener('input', (event) => {
+    const colorValue = String(event.target && event.target.value ? event.target.value : '').trim();
+    setDefaultIconForegroundColor(colorValue, 'manual picker');
   });
 }
 
@@ -1322,6 +1975,23 @@ if (copyLlmPromptBtn) {
 if (applyLlmResponseBtn) {
   applyLlmResponseBtn.addEventListener('click', async () => {
     await validateAndApplyLlmResponse();
+  });
+}
+
+if (addActionGroupBtn) {
+  addActionGroupBtn.addEventListener('click', () => {
+    addGroupingBucketFromInput();
+  });
+}
+
+if (newGroupNameEl) {
+  newGroupNameEl.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') {
+      return;
+    }
+
+    event.preventDefault();
+    addGroupingBucketFromInput();
   });
 }
 
@@ -1378,7 +2048,12 @@ runMockBuildBtn.addEventListener('click', async () => {
     const payload = {
       ...buildGeneratorPayloadFromApprovals(),
       approvalActions,
-      pluginIconAssetPath: pluginIconAssetPath || undefined
+      pluginIconAssetPath: pluginIconAssetPath || undefined,
+      defaultIconTemplate: {
+        backgroundColorHex: defaultIconBackgroundHex,
+        foregroundColorHex: defaultIconForegroundHex
+      },
+      requireRealBuildOnly: true
     };
 
     const startResponse = await fetch('/api/generator/build-from-approval', {
@@ -1440,6 +2115,27 @@ runMockBuildBtn.addEventListener('click', async () => {
           const result = statusData.result || {};
           const error = result.error || {};
           const message = error.message || result.message || 'Plugin creation could not finish.';
+          if (String(error.code || '') === 'REAL_BUILD_REQUIRED') {
+            const diagnostics = result.build && result.build.diagnostics ? result.build.diagnostics : {};
+            const missing = [];
+            if (!(diagnostics.dotnet && diagnostics.dotnet.available)) {
+              missing.push('dotnet SDK');
+            }
+            if (!(diagnostics.pluginApi && diagnostics.pluginApi.available)) {
+              missing.push('PluginApi.dll');
+            }
+
+            const missingText = missing.length
+              ? ` Missing prerequisites: ${missing.join(', ')}.`
+              : '';
+            const details = Array.isArray(error.details) ? error.details.filter(Boolean) : [];
+            const detailText = !missing.length && details.length
+              ? ` Build details: ${String(details[0])}`
+              : '';
+            setBuildStatus('warn', `Could not create plugin: ${message}${missingText}${detailText}`);
+            return;
+          }
+
           setBuildStatus('warn', `Could not create plugin: ${message}`);
           return;
         }
@@ -1537,7 +2233,7 @@ async function loadApprovalCards(options = {}) {
       id: item.id,
       name: item.name,
       description: item.description,
-      groupPath: item.groupPath || 'Generated',
+      groupPath: item.groupPath || '',
       actionKind: item.actionKind,
       icon: item.icon,
       shortcuts: item.quickView && Array.isArray(item.quickView.shortcutSummary)
@@ -1561,13 +2257,16 @@ async function loadApprovalCards(options = {}) {
     approvalActions.forEach((item) => {
       syncActionReviewState(item);
     });
+    ensureGroupingBucketsFromActions();
 
     recordingActionId = null;
     renderApprovalCards();
     setReadiness('info', 'Review each action card and adjust shortcuts or icons if needed. Valid cards are marked ready automatically.');
+    setGroupingStatus('info', 'Add groups and drag actions into the right group before creating your plugin.');
     return true;
   } catch (error) {
     approvalActions = [];
+    groupingBuckets = [];
     recordingActionId = null;
     renderApprovalCards();
     setReadiness('warn', `Could not prepare action cards: ${error.message}`);
@@ -1581,4 +2280,6 @@ showStep(1, { replaceHistory: true, scroll: false, focus: false });
 renderParsedActionsTable();
 updateBuildButtonState();
 updateStep1ContinueState();
+updateGroupingPanelState();
 setLlmAssistStatus('info', 'Generate a prompt after your action cards are loaded.');
+setDefaultIconTemplateColor(defaultIconBackgroundHex, 'default');

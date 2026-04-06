@@ -1,0 +1,29 @@
+# Task
+Pick one Font Awesome Free icon for every action below.
+
+# Rules
+- Output valid JSON only (no prose).
+- Use every actionId exactly once.
+- Return exactly one icon per action.
+- Use icon names from Font Awesome Free (for example: copy, paste, arrow-right).
+- Do not reuse the same icon family across different command groups.
+- Keep distinct icon families for groups like move note, navigate notes, move list item, and navigate list item.
+- Keep opposite navigation actions visually opposite (next vs previous, forward vs back).
+
+# JSON Schema
+{
+  "assignments": [
+    {
+      "actionId": "exact-action-id",
+      "icon": "font-awesome-icon-name-or-path",
+      "pack": "solid|regular|brands",
+      "reason": "short reason"
+    }
+  ]
+}
+
+# Actions
+__ACTIONS_JSON__
+
+# Return Only This JSON Shape
+__RESPONSE_TEMPLATE_JSON__
